@@ -3,57 +3,106 @@ import io
 import wave
 import pyaudio
 import pygame
+from datetime import datetime
 from google.cloud import speech, texttospeech
 
 # Initialize Google Cloud clients
 speech_client = speech.SpeechClient()
 tts_client = texttospeech.TextToSpeechClient()
 
+# Define the path to the specdata folder
+SPECDATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'specdata')
+
+def generate_unique_filename(base_name, extension):
+    """
+    Generates a unique filename using the current timestamp.
+    
+    :param base_name: The base name for the file
+    :param extension: The file extension
+    :return: A unique filename
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{base_name}_{timestamp}{extension}"
+
 def record_audio(duration=5, sample_rate=16000):
     """
-    Records audio from the microphone and saves it to a file.
+    Records audio from the microphone and saves it to a file in the specdata folder.
     
     :param duration: The duration of the recording in seconds (default: 5)
     :param sample_rate: The sample rate of the audio (default: 16000)
-    :return: The path of the saved audio file
+    :return: The path of the saved audio file or None if an error occurred
     """
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
 
-    p = pyaudio.PyAudio()
+    # Generate a unique filename
+    filename = generate_unique_filename("recorded_audio", ".wav")
+    full_path = os.path.join(SPECDATA_DIR, filename)
 
-    print(f"Recording for {duration} seconds...")
+    try:
+        p = pyaudio.PyAudio()
 
-    stream = p.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=sample_rate,
-                    input=True,
-                    frames_per_buffer=CHUNK)
+        # Ensure the specdata directory exists
+        os.makedirs(SPECDATA_DIR, exist_ok=True)
 
-    frames = []
+        print(f"Recording for {duration} seconds...")
 
-    for i in range(0, int(sample_rate / CHUNK * duration)):
-        data = stream.read(CHUNK)
-        frames.append(data)
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=sample_rate,
+                        input=True,
+                        frames_per_buffer=CHUNK)
 
-    print("Recording finished.")
+        frames = []
 
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
+        for i in range(0, int(sample_rate / CHUNK * duration)):
+            try:
+                data = stream.read(CHUNK)
+                frames.append(data)
+            except IOError as e:
+                print(f"Warning: Dropped frame due to I/O error: {e}")
 
-    # Save the recorded audio to a file
-    filename = "recorded_audio.wav"
-    wf = wave.open(filename, 'wb')
-    wf.setnchannels(CHANNELS)
-    wf.setsampwidth(p.get_sample_size(FORMAT))
-    wf.setframerate(sample_rate)
-    wf.writeframes(b''.join(frames))
-    wf.close()
+        print("Recording finished.")
 
-    print(f"Audio saved as: {filename}")
-    return filename
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+        # Save the recorded audio to a file in the specdata folder
+        with wave.open(full_path, 'wb') as wf:
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(p.get_sample_size(FORMAT))
+            wf.setframerate(sample_rate)
+            wf.writeframes(b''.join(frames))
+        print(f"Audio saved as: {full_path}")
+        return full_path
+
+    except pyaudio.PyAudioError as e:
+        print(f"Error initializing PyAudio: {e}")
+        return None
+    except OSError as e:
+        print(f"Error accessing the audio device: {e}")
+        return None
+    except wave.Error as e:
+        print(f"Error saving the audio file: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
+    finally:
+        # Cleanup
+        if stream:
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception as e:
+                print(f"Note: Could not close stream. It may already be closed. Details: {e}")
+        if p:
+            try:
+                p.terminate()
+            except Exception as e:
+                print(f"Note: Error terminating PyAudio. Details: {e}")
 
 def transcribe_audio(audio_file, language_code):
     """
@@ -134,16 +183,26 @@ def play_audio(audio_content):
     except Exception as e:
         print(f"An error occurred during audio playback: {str(e)}")
 
-def save_audio(audio_content, filename="output.mp3"):
+def save_audio(audio_content, base_filename="output"):
     """
-    Saves the audio content to a file.
+    Saves the audio content to a file in the specdata folder with a unique filename.
     
     :param audio_content: The audio content to save
-    :param filename: The name of the file to save (default: output.mp3)
+    :param base_filename: The base name for the file (default: "output")
+    :return: The full path of the saved file or None if an error occurred
     """
     try:
-        with open(filename, "wb") as out:
+        # Ensure the specdata directory exists
+        os.makedirs(SPECDATA_DIR, exist_ok=True)
+        
+        # Generate a unique filename
+        filename = generate_unique_filename(base_filename, ".mp3")
+        full_path = os.path.join(SPECDATA_DIR, filename)
+        
+        with open(full_path, "wb") as out:
             out.write(audio_content)
-        print(f'Audio content written to file "{filename}"')
+        print(f'Audio content written to file "{full_path}"')
+        return full_path
     except Exception as e:
         print(f"An error occurred while saving the audio: {str(e)}")
+        return None
