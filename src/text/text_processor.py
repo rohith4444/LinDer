@@ -1,5 +1,11 @@
 from openai import OpenAI
 import os
+from docx import Document
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from io import BytesIO
+from utils.common import read_file
+from PyPDF2 import PdfReader, PdfWriter
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -66,3 +72,46 @@ def summarize_text(text, max_words=100):
     except Exception as e:
         print(f"An error occurred during text summarization: {str(e)}")
         return None
+
+def write_pdf(content, output_file):
+    packet = BytesIO()
+    can = canvas.Canvas(packet, pagesize=letter)
+    width, height = letter
+    y = height - 50  # Start 50 points down from the top
+
+    for line in content.split('\n'):
+        if y < 50:  # If we're near the bottom of the page
+            can.showPage()  # Start a new page
+            y = height - 50  # Reset y to the top of the new page
+
+        can.drawString(50, y, line)
+        y -= 15  # Move down 15 points
+
+    can.save()
+
+    packet.seek(0)
+    new_pdf = PdfReader(packet)
+    writer = PdfWriter()
+    writer.add_page(new_pdf.pages[0])
+
+    with open(output_file, 'wb') as output_file_handle:
+        writer.write(output_file_handle)
+
+def translate_file(input_file, output_file, source_lang, target_lang):
+    content = read_file(input_file)
+    translated_content = translate_text(content, source_lang, target_lang)
+    
+    _, file_extension = os.path.splitext(output_file)
+    if file_extension.lower() == '.txt':
+        with open(output_file, 'w', encoding='utf-8') as file:
+            file.write(translated_content)
+    elif file_extension.lower() == '.pdf':
+        write_pdf(translated_content, output_file)
+    elif file_extension.lower() == '.docx':
+        doc = Document()
+        doc.add_paragraph(translated_content)
+        doc.save(output_file)
+    else:
+        raise ValueError(f"Unsupported output file format: {file_extension}")
+
+    return output_file

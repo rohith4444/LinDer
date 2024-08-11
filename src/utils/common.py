@@ -1,5 +1,7 @@
 import os
 from dotenv import load_dotenv
+from PyPDF2 import PdfReader
+from docx import Document
 
 def get_language_choice(prompt, languages):
     """
@@ -46,4 +48,28 @@ def load_env_variables():
         if not os.getenv(var):
             raise EnvironmentError(f"Missing required environment variable: {var}")
 
-# You can add more common utility functions here as needed
+def read_text_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return file.read()
+
+def read_pdf_file(file_path):
+    reader = PdfReader(file_path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text()
+    return text
+
+def read_docx_file(file_path):
+    doc = Document(file_path)
+    return "\n".join([paragraph.text for paragraph in doc.paragraphs])
+
+def read_file(file_path):
+    _, file_extension = os.path.splitext(file_path)
+    if file_extension.lower() == '.txt':
+        return read_text_file(file_path)
+    elif file_extension.lower() == '.pdf':
+        return read_pdf_file(file_path)
+    elif file_extension.lower() == '.docx':
+        return read_docx_file(file_path)
+    else:
+        raise ValueError(f"Unsupported file format: {file_extension}")

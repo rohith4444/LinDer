@@ -1,3 +1,5 @@
+from google.cloud import speech, texttospeech
+
 # Application settings
 
 # Language options
@@ -10,10 +12,10 @@ LANGUAGES = {
 }
 
 # Voice options
-VOICES = {
-    "1": ("Male", "MALE"),
-    "2": ("Female", "FEMALE"),
-    "3": ("Neutral", "NEUTRAL")
+voices = {
+    "1": ("Male", texttospeech.SsmlVoiceGender.MALE),
+    "2": ("Female", texttospeech.SsmlVoiceGender.FEMALE),
+    "3": ("Neutral", texttospeech.SsmlVoiceGender.NEUTRAL)
 }
 
 # API settings
