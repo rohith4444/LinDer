@@ -19,6 +19,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# speech data
-specdata/*
-!specdata/.gitkeep
+# data
+data/*
+!data/.gitkeep
