@@ -1,19 +1,15 @@
 import os
-from speech.speech_processor import record_audio, transcribe_audio, text_to_speech, play_audio, save_audio, generate_audio_book, transcribe_audio_file, translate_audio_file
-from text.text_processor import translate_text, translate_file
-from utils.common import get_language_choice, get_filename, load_env_variables
+from speech.speech_processor import record_audio, transcribe_audio, text_to_speech, play_audio, save_audio, generate_audio_book, transcribe_audio_file, translate_audio_file, set_data_dir
+from text.text_processor import translate_text, translate_file, process_text, process_file
+from utils.common import get_language_choice, get_filename, load_env_variables, write_file, read_file
 from google.cloud import texttospeech
 
-from docx import Document
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from io import BytesIO
-
 def main():
-    # Load environment variables
+    """
+    Main function to run the Speech and Text Processing Application.
+    """
     load_env_variables()
 
-    # Define language options
     languages = {
         "1": ("English", "en-US"),
         "2": ("Spanish", "es-ES"),
@@ -22,7 +18,6 @@ def main():
         "5": ("Italian", "it-IT")
     }
 
-    # Define voice options
     voices = {
         "1": ("Male", texttospeech.SsmlVoiceGender.MALE),
         "2": ("Female", texttospeech.SsmlVoiceGender.FEMALE),
@@ -35,15 +30,17 @@ def main():
         print("2. Speech to Text with Translation")
         print("3. Text to Speech (Same Language)")
         print("4. Text to Speech with Translation")
-        print("5. Text to Text Language Translation")
-        print("6. Speech to Speech Language Translation")
-        print("7. File Translation")
+        print("5. Text Translation")
+        print("6. Speech to Speech Translation")
+        print("7. Document Translation")
         print("8. Generate Audio Book")
-        print("9. Audio File to Translated Text")
-        print("10. Audio File to Translated Audio")
-        print("11. Exit")
+        print("9. Audio File to Text File (with Translation)")
+        print("10. Audio File to Audio File Translation")
+        print("11. Sentiment Analysis")
+        print("12. Text Summarization")
+        print("13. Exit")
 
-        choice = input("Enter your choice (1-11): ")
+        choice = input("Enter your choice (1-13): ")
 
         if choice == '1':
             handle_speech_to_text(languages, translate=False)
@@ -58,44 +55,62 @@ def main():
         elif choice == '6':
             handle_speech_to_speech(languages, voices)
         elif choice == '7':
-            handle_file_translation(languages)
+            handle_document_translation(languages)
         elif choice == '8':
             handle_audio_book_generation(languages, voices)
         elif choice == '9':
-            handle_audio_to_translated_text(languages)
+            handle_audio_to_text_translation(languages)
         elif choice == '10':
-            handle_audio_to_translated_audio(languages, voices)
+            handle_audio_to_audio_translation(languages, voices)
         elif choice == '11':
+            handle_sentiment_analysis()
+        elif choice == '12':
+            handle_text_summarization()
+        elif choice == '13':
             print("Thank you for using the Speech and Text Processing Application. Goodbye!")
             break
         else:
             print("Invalid choice. Please try again.")
 
 # Define constants for input and output directories
-INPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'file_translation', 'input')
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'file_translation', 'output')
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+IO_FILES_DIR = os.path.join(DATA_DIR, 'io files')
+set_data_dir(IO_FILES_DIR)
+DOCUMENT_INPUT_DIR = os.path.join(DATA_DIR, 'document_translation', 'input')
+DOCUMENT_OUTPUT_DIR = os.path.join(DATA_DIR, 'document_translation', 'output')
+AUDIO_BOOK_INPUT_DIR = os.path.join(DATA_DIR, 'audio_book', 'input')
+AUDIO_BOOK_OUTPUT_DIR = os.path.join(DATA_DIR, 'audio_book', 'output')
+AUDIO_TO_TEXT_INPUT_DIR = os.path.join(DATA_DIR, 'audio_to_text', 'input')
+AUDIO_TO_TEXT_OUTPUT_DIR = os.path.join(DATA_DIR, 'audio_to_text', 'output')
+AUDIO_TRANSLATION_INPUT_DIR = os.path.join(DATA_DIR, 'audio_translation', 'input')
+AUDIO_TRANSLATION_OUTPUT_DIR = os.path.join(DATA_DIR, 'audio_translation', 'output')
 
-def handle_file_translation(languages):
+def handle_document_translation(languages):
+    """
+    Handle the translation of document files.
+    """
     source_lang, _ = get_language_choice("Select the source language:", languages)
     target_lang, _ = get_language_choice("Select the target language:", languages)
     
     input_filename = input("Enter the input filename (including extension): ")
     output_filename = input("Enter the output filename (including extension): ")
 
-    input_file = os.path.join(INPUT_DIR, input_filename)
-    output_file = os.path.join(OUTPUT_DIR, output_filename)
+    input_file = os.path.join(DOCUMENT_INPUT_DIR, input_filename)
+    output_file = os.path.join(DOCUMENT_OUTPUT_DIR, output_filename)
 
     try:
-        translated_file = translate_file(input_file, output_file, source_lang, target_lang)
-        print(f"Translated file saved as: {os.path.basename(translated_file)}")
+        translated_file = process_file(input_file, output_file, 'translate', source_lang=source_lang, target_lang=target_lang)
+        if translated_file:
+            print(f"Translated file saved as: {os.path.basename(translated_file)}")
+        else:
+            print("Translation failed.")
     except Exception as e:
         print(f"An error occurred during file translation: {str(e)}")
 
-# Define constants for input and output directories
-INPUTA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'audio_book', 'input')
-OUTPUTA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'audio_book', 'output')
-
 def handle_audio_book_generation(languages, voices):
+    """
+    Handle the generation of an audio book from a text file.
+    """
     source_lang, source_code = get_language_choice("Select the source language:", languages)
     target_lang, target_code = get_language_choice("Select the target language:", languages)
     voice_name, voice_gender = get_language_choice("Select the voice gender:", voices)
@@ -103,8 +118,8 @@ def handle_audio_book_generation(languages, voices):
     input_filename = input("Enter the input filename (including extension): ")
     output_filename = input("Enter the output filename (including extension): ")
 
-    input_file = os.path.join(INPUTA_DIR, input_filename)
-    output_file = os.path.join(OUTPUTA_DIR, output_filename)
+    input_file = os.path.join(AUDIO_BOOK_INPUT_DIR, input_filename)
+    output_file = os.path.join(AUDIO_BOOK_OUTPUT_DIR, output_filename)
 
     print(f"Generating audio book from {input_file}...")
     print(f"Source language: {source_lang}")
@@ -121,78 +136,36 @@ def handle_audio_book_generation(languages, voices):
             play_audio(generated_file)
     except Exception as e:
         print(f"An error occurred during audio book generation: {str(e)}")
-        print(f"Input file: {input_file}")
-        print(f"Output file: {output_file}")
-        print(f"Source language code: {source_code}")
-        print(f"Target language code: {target_code}")
-        print(f"Voice gender: {voice_gender}")
 
-# Define constants for input and output directories
-AUDIO_INPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'audi_to_text', 'input')
-TEXT_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'audi_to_text', 'output')
-
-def handle_audio_to_translated_text(languages):
+def handle_audio_to_text_translation(languages):
+    """
+    Handle the translation of an audio file to a text file.
+    """
     source_lang, source_code = get_language_choice("Select the source language of the audio:", languages)
     target_lang, _ = get_language_choice("Select the target language for translation:", languages)
     
     input_filename = input("Enter the input audio filename (including extension): ")
     output_filename = input("Enter the output text filename (including extension): ")
 
-    input_file = os.path.join(AUDIO_INPUT_DIR, input_filename)
-    output_file = os.path.join(TEXT_OUTPUT_DIR, output_filename)
+    input_file = os.path.join(AUDIO_TO_TEXT_INPUT_DIR, input_filename)
+    output_file = os.path.join(AUDIO_TO_TEXT_OUTPUT_DIR, output_filename)
 
     try:
-        # Transcribe audio to text
         transcribed_text = transcribe_audio_file(input_file, source_code)
         print(f"Transcribed text: {transcribed_text}")
 
-        # Translate the transcribed text
-        translated_text = translate_text(transcribed_text, source_lang, target_lang)
+        translated_text = process_text(transcribed_text, 'translate', source_lang=source_lang, target_lang=target_lang)
         print(f"Translated text: {translated_text}")
 
-        # Save the translated text to a file based on the output file extension
-        _, file_extension = os.path.splitext(output_file)
-        if file_extension.lower() == '.txt':
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(translated_text)
-        elif file_extension.lower() == '.pdf':
-            write_pdf(translated_text, output_file)
-        elif file_extension.lower() == '.docx':
-            doc = Document()
-            doc.add_paragraph(translated_text)
-            doc.save(output_file)
-        else:
-            raise ValueError(f"Unsupported output file format: {file_extension}")
-        
+        write_file(translated_text, output_file)
         print(f"Translated text saved as: {output_file}")
     except Exception as e:
         print(f"An error occurred during audio-to-text translation: {str(e)}")
 
-def write_pdf(content, output_file):
-    packet = BytesIO()
-    can = canvas.Canvas(packet, pagesize=letter)
-    width, height = letter
-    y = height - 50  # Start 50 points down from the top
-
-    for line in content.split('\n'):
-        if y < 50:  # If we're near the bottom of the page
-            can.showPage()  # Start a new page
-            y = height - 50  # Reset y to the top of the new page
-
-        can.drawString(50, y, line)
-        y -= 15  # Move down 15 points
-
-    can.save()
-
-    packet.seek(0)
-    with open(output_file, 'wb') as output_file_handle:
-        output_file_handle.write(packet.getvalue())
-
-# Define constants for input and output directories
-AUDIO_TRANS_INPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'audio_translation', 'input')
-AUDIO_TRANS_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'audio_translation', 'output')
-
-def handle_audio_to_translated_audio(languages, voices):
+def handle_audio_to_audio_translation(languages, voices):
+    """
+    Handle the translation of an audio file to another audio file in a different language.
+    """
     source_lang, source_code = get_language_choice("Select the source language of the audio:", languages)
     target_lang, target_code = get_language_choice("Select the target language for translation:", languages)
     voice_name, voice_gender = get_language_choice("Select the voice gender for the output audio:", voices)
@@ -200,8 +173,8 @@ def handle_audio_to_translated_audio(languages, voices):
     input_filename = input("Enter the input audio filename (including extension): ")
     output_filename = input("Enter the output audio filename (including extension): ")
 
-    input_file = os.path.join(AUDIO_TRANS_INPUT_DIR, input_filename)
-    output_file = os.path.join(AUDIO_TRANS_OUTPUT_DIR, output_filename)
+    input_file = os.path.join(AUDIO_TRANSLATION_INPUT_DIR, input_filename)
+    output_file = os.path.join(AUDIO_TRANSLATION_OUTPUT_DIR, output_filename)
 
     try:
         translated_audio_file = translate_audio_file(input_file, output_file, source_code, target_code, voice_gender)
@@ -213,8 +186,10 @@ def handle_audio_to_translated_audio(languages, voices):
     except Exception as e:
         print(f"An error occurred during audio translation: {str(e)}")
 
-        
 def handle_speech_to_text(languages, translate=False):
+    """
+    Handle speech-to-text conversion with optional translation.
+    """
     source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
     duration = int(input("Enter recording duration in seconds: "))
     audio_file = record_audio(duration)
@@ -223,15 +198,18 @@ def handle_speech_to_text(languages, translate=False):
 
     if translate:
         target_lang, _ = get_language_choice("Select the target language for translation:", languages)
-        translated_text = translate_text(text, source_lang, target_lang)
+        translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
         print(f"Translated text ({target_lang}): {translated_text}")
 
 def handle_text_to_speech(languages, voices, translate=False):
+    """
+    Handle text-to-speech conversion with optional translation.
+    """
     if translate:
         source_lang, _ = get_language_choice("Select the source language:", languages)
         text = input("Enter the text to translate and convert to speech: ")
         target_lang, target_code = get_language_choice("Select the target language for translation and speech:", languages)
-        translated_text = translate_text(text, source_lang, target_lang)
+        translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
         print(f"Translated text: {translated_text}")
     else:
         target_lang, target_code = get_language_choice("Select the language for text-to-speech:", languages)
@@ -250,13 +228,19 @@ def handle_text_to_speech(languages, voices, translate=False):
                 print(f"Audio saved as: {saved_path}")
 
 def handle_text_translation(languages):
+    """
+    Handle text-to-text translation.
+    """
     source_lang, _ = get_language_choice("Select the source language:", languages)
     target_lang, _ = get_language_choice("Select the target language:", languages)
     text = input("Enter the text to translate: ")
-    translated_text = translate_text(text, source_lang, target_lang)
+    translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
     print(f"Translated text: {translated_text}")
 
 def handle_speech_to_speech(languages, voices):
+    """
+    Handle speech-to-speech translation.
+    """
     source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
     target_lang, target_code = get_language_choice("Select the target language for translation:", languages)
     
@@ -265,7 +249,7 @@ def handle_speech_to_speech(languages, voices):
     text = transcribe_audio(audio_file, source_code)
     print(f"Transcribed text: {text}")
 
-    translated_text = translate_text(text, source_lang, target_lang)
+    translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
     print(f"Translated text: {translated_text}")
 
     voice_name, voice_gender = get_language_choice("Select the voice gender for the output speech:", voices)
@@ -278,6 +262,23 @@ def handle_speech_to_speech(languages, voices):
             saved_path = save_audio(audio_content, base_filename)
             if saved_path:
                 print(f"Translated audio saved as: {saved_path}")
+
+def handle_sentiment_analysis():
+    """
+    Handle sentiment analysis of text.
+    """
+    text = input("Enter the text for sentiment analysis: ")
+    sentiment = process_text(text, 'analyze_sentiment')
+    print(f"Sentiment: {sentiment}")
+
+def handle_text_summarization():
+    """
+    Handle text summarization.
+    """
+    text = input("Enter the text to summarize: ")
+    max_words = int(input("Enter the maximum number of words for the summary: "))
+    summary = process_text(text, 'summarize', max_words=max_words)
+    print(f"Summary: {summary}")
 
 if __name__ == "__main__":
     main()

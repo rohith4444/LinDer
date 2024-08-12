@@ -1,11 +1,6 @@
-from openai import OpenAI
 import os
-from docx import Document
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from io import BytesIO
-from utils.common import read_file
-from PyPDF2 import PdfReader, PdfWriter
+from openai import OpenAI
+from utils.common import read_file, write_file
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -73,45 +68,62 @@ def summarize_text(text, max_words=100):
         print(f"An error occurred during text summarization: {str(e)}")
         return None
 
-def write_pdf(content, output_file):
-    packet = BytesIO()
-    can = canvas.Canvas(packet, pagesize=letter)
-    width, height = letter
-    y = height - 50  # Start 50 points down from the top
-
-    for line in content.split('\n'):
-        if y < 50:  # If we're near the bottom of the page
-            can.showPage()  # Start a new page
-            y = height - 50  # Reset y to the top of the new page
-
-        can.drawString(50, y, line)
-        y -= 15  # Move down 15 points
-
-    can.save()
-
-    packet.seek(0)
-    new_pdf = PdfReader(packet)
-    writer = PdfWriter()
-    writer.add_page(new_pdf.pages[0])
-
-    with open(output_file, 'wb') as output_file_handle:
-        writer.write(output_file_handle)
-
 def translate_file(input_file, output_file, source_lang, target_lang):
-    content = read_file(input_file)
-    translated_content = translate_text(content, source_lang, target_lang)
+    """
+    Translates the content of a file from source language to target language.
     
-    _, file_extension = os.path.splitext(output_file)
-    if file_extension.lower() == '.txt':
-        with open(output_file, 'w', encoding='utf-8') as file:
-            file.write(translated_content)
-    elif file_extension.lower() == '.pdf':
-        write_pdf(translated_content, output_file)
-    elif file_extension.lower() == '.docx':
-        doc = Document()
-        doc.add_paragraph(translated_content)
-        doc.save(output_file)
-    else:
-        raise ValueError(f"Unsupported output file format: {file_extension}")
+    :param input_file: Path to the input file
+    :param output_file: Path to save the translated file
+    :param source_lang: Source language
+    :param target_lang: Target language
+    :return: Path to the translated file
+    """
+    try:
+        content = read_file(input_file)
+        translated_content = translate_text(content, source_lang, target_lang)
+        write_file(translated_content, output_file)
+        return output_file
+    except Exception as e:
+        print(f"An error occurred during file translation: {str(e)}")
+        return None
 
-    return output_file
+def process_text(text, operation, **kwargs):
+    """
+    Processes text based on the specified operation.
+    
+    :param text: The text to process
+    :param operation: The operation to perform ('translate', 'analyze_sentiment', or 'summarize')
+    :param kwargs: Additional keyword arguments for specific operations
+    :return: Processed text or None if processing fails
+    """
+    if operation == 'translate':
+        return translate_text(text, kwargs['source_lang'], kwargs['target_lang'])
+    elif operation == 'analyze_sentiment':
+        return analyze_sentiment(text)
+    elif operation == 'summarize':
+        return summarize_text(text, kwargs.get('max_words', 100))
+    else:
+        print(f"Unsupported operation: {operation}")
+        return None
+
+def process_file(input_file, output_file, operation, **kwargs):
+    """
+    Processes a file based on the specified operation.
+    
+    :param input_file: Path to the input file
+    :param output_file: Path to save the processed file
+    :param operation: The operation to perform ('translate', 'analyze_sentiment', or 'summarize')
+    :param kwargs: Additional keyword arguments for specific operations
+    :return: Path to the processed file or None if processing fails
+    """
+    try:
+        content = read_file(input_file)
+        processed_content = process_text(content, operation, **kwargs)
+        if processed_content:
+            write_file(processed_content, output_file)
+            return output_file
+        else:
+            return None
+    except Exception as e:
+        print(f"An error occurred during file processing: {str(e)}")
+        return None
