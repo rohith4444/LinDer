@@ -28,3 +28,6 @@ logs/
 
 # Ignore all .log files in case any end up outside the logs directory
 *.log
+
+# Ignore config.ini but not the config directory
+config/config.ini

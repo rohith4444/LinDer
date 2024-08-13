@@ -7,6 +7,10 @@ from reportlab.lib.pagesizes import letter
 from io import BytesIO
 from datetime import datetime
 from logging_config import get_module_logger
+from config.settings import (
+    LANGUAGES, OPENAI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS,
+    AUDIO_OUTPUT_DIR, DOCUMENT_INPUT_DIR, DOCUMENT_OUTPUT_DIR
+)
 
 # Get logger for this module
 logger = get_module_logger(__name__)
@@ -24,12 +28,12 @@ def generate_unique_filename(base_name, extension):
     logger.info(f"Generated unique filename: {unique_filename}")
     return unique_filename
 
-def get_language_choice(prompt, languages):
+def get_language_choice(prompt, languages=LANGUAGES):
     """
     Presents a list of language choices to the user and returns the selected language.
     
     :param prompt: The prompt to display to the user
-    :param languages: A dictionary of language choices
+    :param languages: A dictionary of language choices (default: LANGUAGES from settings)
     :return: The selected language
     """
     logger.info("Presenting language choices to user")
@@ -69,11 +73,17 @@ def load_env_variables():
     logger.info("Loading environment variables")
     load_dotenv()
 
-    required_vars = ["OPENAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]
-    for var in required_vars:
-        if not os.getenv(var):
+    # Check for required environment variables
+    required_vars = {
+        "OPENAI_API_KEY": OPENAI_API_KEY,
+        "GOOGLE_APPLICATION_CREDENTIALS": GOOGLE_APPLICATION_CREDENTIALS
+    }
+
+    for var, value in required_vars.items():
+        if not value:
             logger.error(f"Missing required environment variable: {var}")
             raise EnvironmentError(f"Missing required environment variable: {var}")
+    
     logger.info("Environment variables loaded successfully")
 
 def read_text_file(file_path):

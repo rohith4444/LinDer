@@ -1,0 +1,39 @@
+[API]
+# OpenAI model to use for text processing
+OPENAI_MODEL = gpt-3.5-turbo
+# Your OpenAI API key
+OPENAI_API_KEY = your_openai_api_key_here
+
+[Google]
+# Path to your Google Cloud credentials JSON file
+GOOGLE_APPLICATION_CREDENTIALS = path/to/your/google_credentials.json
+
+[Audio]
+# Default duration for audio recording in seconds
+DEFAULT_AUDIO_DURATION = 5
+# Sample rate for audio processing
+AUDIO_SAMPLE_RATE = 16000
+
+[Paths]
+# Directory names for various input and output folders
+AUDIO_OUTPUT_DIR = audio_output
+DOCUMENT_INPUT_DIR = document_translation/input
+DOCUMENT_OUTPUT_DIR = document_translation/output
+AUDIO_BOOK_INPUT_DIR = audio_book/input
+AUDIO_BOOK_OUTPUT_DIR = audio_book/output
+AUDIO_TO_TEXT_INPUT_DIR = audio_to_text/input
+AUDIO_TO_TEXT_OUTPUT_DIR = audio_to_text/output
+AUDIO_TRANSLATION_INPUT_DIR = audio_translation/input
+AUDIO_TRANSLATION_OUTPUT_DIR = audio_translation/output
+
+[Logging]
+# Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_LEVEL = INFO
+# Logging format
+LOG_FORMAT = %%(asctime)s - %%(name)s - %%(levelname)s - %%(message)s
+# Directory for log files
+LOG_DIR = logs
+# Maximum size of each log file in bytes (default: 5 MB)
+MAX_LOG_SIZE = 5242880
+# Number of backup log files to keep
+BACKUP_COUNT = 5

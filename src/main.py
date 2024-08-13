@@ -1,8 +1,13 @@
 import os
+from config.settings import (
+    LANGUAGES, VOICES, AUDIO_OUTPUT_DIR, DOCUMENT_INPUT_DIR, DOCUMENT_OUTPUT_DIR,
+    AUDIO_BOOK_INPUT_DIR, AUDIO_BOOK_OUTPUT_DIR, AUDIO_TO_TEXT_INPUT_DIR,
+    AUDIO_TO_TEXT_OUTPUT_DIR, AUDIO_TRANSLATION_INPUT_DIR, AUDIO_TRANSLATION_OUTPUT_DIR,
+    DEFAULT_AUDIO_DURATION
+)
 from speech.speech_processor import record_audio, transcribe_audio, text_to_speech, play_audio, save_audio, generate_audio_book, transcribe_audio_file, translate_audio_file, set_data_dir
 from text.text_processor import translate_text, translate_file, process_text, process_file
 from utils.common import get_language_choice, get_filename, load_env_variables, write_file, read_file
-from google.cloud import texttospeech
 from logging_config import get_module_logger
 
 logger = get_module_logger(__name__)
@@ -11,24 +16,8 @@ def main():
     """
     Main function to run the Speech and Text Processing Application.
     """
-
     logger.info("Starting Speech and Text Processing Application")
-
     load_env_variables()
-
-    languages = {
-        "1": ("English", "en-US"),
-        "2": ("Spanish", "es-ES"),
-        "3": ("French", "fr-FR"),
-        "4": ("German", "de-DE"),
-        "5": ("Italian", "it-IT")
-    }
-
-    voices = {
-        "1": ("Male", texttospeech.SsmlVoiceGender.MALE),
-        "2": ("Female", texttospeech.SsmlVoiceGender.FEMALE),
-        "3": ("Neutral", texttospeech.SsmlVoiceGender.NEUTRAL)
-    }
 
     while True:
         logger.info("Displaying main menu")
@@ -51,25 +40,25 @@ def main():
         logger.info(f"User selected option: {choice}")
 
         if choice == '1':
-            handle_speech_to_text(languages, translate=False)
+            handle_speech_to_text(LANGUAGES, translate=False)
         elif choice == '2':
-            handle_speech_to_text(languages, translate=True)
+            handle_speech_to_text(LANGUAGES, translate=True)
         elif choice == '3':
-            handle_text_to_speech(languages, voices, translate=False)
+            handle_text_to_speech(LANGUAGES, VOICES, translate=False)
         elif choice == '4':
-            handle_text_to_speech(languages, voices, translate=True)
+            handle_text_to_speech(LANGUAGES, VOICES, translate=True)
         elif choice == '5':
-            handle_text_translation(languages)
+            handle_text_translation(LANGUAGES)
         elif choice == '6':
-            handle_speech_to_speech(languages, voices)
+            handle_speech_to_speech(LANGUAGES, VOICES)
         elif choice == '7':
-            handle_document_translation(languages)
+            handle_document_translation(LANGUAGES)
         elif choice == '8':
-            handle_audio_book_generation(languages, voices)
+            handle_audio_book_generation(LANGUAGES, VOICES)
         elif choice == '9':
-            handle_audio_to_text_translation(languages)
+            handle_audio_to_text_translation(LANGUAGES)
         elif choice == '10':
-            handle_audio_to_audio_translation(languages, voices)
+            handle_audio_to_audio_translation(LANGUAGES, VOICES)
         elif choice == '11':
             handle_sentiment_analysis()
         elif choice == '12':
@@ -81,19 +70,6 @@ def main():
         else:
             logger.warning(f"Invalid choice entered: {choice}")
             print("Invalid choice. Please try again.")
-
-# Define constants for input and output directories
-DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
-IO_FILES_DIR = os.path.join(DATA_DIR, 'io files')
-set_data_dir(IO_FILES_DIR)
-DOCUMENT_INPUT_DIR = os.path.join(DATA_DIR, 'document_translation', 'input')
-DOCUMENT_OUTPUT_DIR = os.path.join(DATA_DIR, 'document_translation', 'output')
-AUDIO_BOOK_INPUT_DIR = os.path.join(DATA_DIR, 'audio_book', 'input')
-AUDIO_BOOK_OUTPUT_DIR = os.path.join(DATA_DIR, 'audio_book', 'output')
-AUDIO_TO_TEXT_INPUT_DIR = os.path.join(DATA_DIR, 'audio_to_text', 'input')
-AUDIO_TO_TEXT_OUTPUT_DIR = os.path.join(DATA_DIR, 'audio_to_text', 'output')
-AUDIO_TRANSLATION_INPUT_DIR = os.path.join(DATA_DIR, 'audio_translation', 'input')
-AUDIO_TRANSLATION_OUTPUT_DIR = os.path.join(DATA_DIR, 'audio_translation', 'output')
 
 def handle_document_translation(languages):
     """
@@ -221,7 +197,7 @@ def handle_speech_to_text(languages, translate=False):
     """
     logger.info(f"Starting speech-to-text process. Translation: {translate}")
     source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
-    duration = int(input("Enter recording duration in seconds: "))
+    duration = int(input(f"Enter recording duration in seconds (default: {DEFAULT_AUDIO_DURATION}): ") or DEFAULT_AUDIO_DURATION)
     audio_file = record_audio(duration)
     text = transcribe_audio(audio_file, source_code)
     logger.info("Speech transcription completed")
@@ -283,7 +259,7 @@ def handle_speech_to_speech(languages, voices):
     source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
     target_lang, target_code = get_language_choice("Select the target language for translation:", languages)
     
-    duration = int(input("Enter recording duration in seconds: "))
+    duration = int(input(f"Enter recording duration in seconds (default: {DEFAULT_AUDIO_DURATION}): ") or DEFAULT_AUDIO_DURATION)
     logger.info(f"Recording audio for {duration} seconds")
     audio_file = record_audio(duration)
     

@@ -1,21 +1,7 @@
-# File: logging_config.py
-
 import logging
-import os
 from logging.handlers import RotatingFileHandler
-
-# Get the root directory of the project
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Define log directory
-LOG_DIR = os.path.join(ROOT_DIR, 'logs')
-os.makedirs(LOG_DIR, exist_ok=True)
-
-# Define log levels
-LOG_LEVEL = logging.INFO
-
-# Define log format
-LOG_FORMAT = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+import os
+from config.settings import LOG_LEVEL, LOG_FORMAT, LOG_DIR, MAX_LOG_SIZE, BACKUP_COUNT
 
 def get_logger(name, log_file):
     """
@@ -30,18 +16,19 @@ def get_logger(name, log_file):
 
     # Prevent adding handlers if they already exist
     if not logger.handlers:
-        # File Handler
+        # File Handler with rotation
+        os.makedirs(LOG_DIR, exist_ok=True)
         file_handler = RotatingFileHandler(
             os.path.join(LOG_DIR, log_file),
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
+            maxBytes=MAX_LOG_SIZE,
+            backupCount=BACKUP_COUNT
         )
-        file_handler.setFormatter(LOG_FORMAT)
+        file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
         logger.addHandler(file_handler)
 
         # Console Handler
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(LOG_FORMAT)
+        console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
         logger.addHandler(console_handler)
 
     return logger
@@ -72,6 +59,3 @@ def get_module_logger(module_name):
         # If an unknown module is requested, create a new logger
         return get_logger(module_name, f'{module_name}.log')
 
-# Example usage in other files:
-# from logging_config import get_module_logger
-# logger = get_module_logger(__name__)

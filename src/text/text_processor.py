@@ -2,12 +2,13 @@ import os
 from openai import OpenAI
 from utils.common import read_file, write_file
 from logging_config import get_module_logger
+from config.settings import OPENAI_API_KEY, OPENAI_MODEL, DOCUMENT_INPUT_DIR, DOCUMENT_OUTPUT_DIR
 
 # Get logger for this module
 logger = get_module_logger(__name__)
 
 # Initialize OpenAI client
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 def translate_text(text, source_lang, target_lang):
     """
@@ -21,7 +22,7 @@ def translate_text(text, source_lang, target_lang):
     logger.info(f"Starting text translation from {source_lang} to {target_lang}")
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": f"You are a translator. Translate the following text from {source_lang} to {target_lang}."},
                 {"role": "user", "content": text}
@@ -44,7 +45,7 @@ def analyze_sentiment(text):
     logger.info("Starting sentiment analysis")
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are a sentiment analyzer. Analyze the sentiment of the following text and respond with 'Positive', 'Negative', or 'Neutral'."},
                 {"role": "user", "content": text}
@@ -68,7 +69,7 @@ def summarize_text(text, max_words=100):
     logger.info(f"Starting text summarization. Max words: {max_words}")
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": f"You are a text summarizer. Summarize the following text in no more than {max_words} words."},
                 {"role": "user", "content": text}
@@ -153,3 +154,32 @@ def process_file(input_file, output_file, operation, **kwargs):
     except Exception as e:
         logger.exception(f"An error occurred during file processing: {str(e)}")
         return None
+
+def batch_translate_files(input_dir=DOCUMENT_INPUT_DIR, output_dir=DOCUMENT_OUTPUT_DIR, source_lang='en', target_lang='es'):
+    """
+    Translates all text files in the input directory and saves the translated files in the output directory.
+    
+    :param input_dir: Directory containing files to translate (default: DOCUMENT_INPUT_DIR)
+    :param output_dir: Directory to save translated files (default: DOCUMENT_OUTPUT_DIR)
+    :param source_lang: Source language (default: 'en')
+    :param target_lang: Target language (default: 'es')
+    """
+    logger.info(f"Starting batch translation. Input dir: {input_dir}, Output dir: {output_dir}")
+    logger.info(f"Source language: {source_lang}, Target language: {target_lang}")
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for filename in os.listdir(input_dir):
+        if filename.endswith('.txt'):  # Assuming we're only translating .txt files
+            input_file = os.path.join(input_dir, filename)
+            output_file = os.path.join(output_dir, f"translated_{filename}")
+            
+            logger.info(f"Translating file: {filename}")
+            result = translate_file(input_file, output_file, source_lang, target_lang)
+            
+            if result:
+                logger.info(f"Successfully translated: {filename}")
+            else:
+                logger.error(f"Failed to translate: {filename}")
+    
+    logger.info("Batch translation completed")

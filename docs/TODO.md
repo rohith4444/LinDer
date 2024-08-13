@@ -8,7 +8,7 @@ when the source language and target language is same we have to write a new prom
 Configuration:
 Consider moving configuration variables (like API keys, language options, etc.) to a separate configuration file.
 
-implement configuration 
+problem with paths
 do unit testing and user case testing
 
 implement for larger files.

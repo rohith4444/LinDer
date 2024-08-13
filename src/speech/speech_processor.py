@@ -10,6 +10,10 @@ from pydub import AudioSegment
 from text.text_processor import process_text
 from utils.common import read_file, write_file, generate_unique_filename
 from logging_config import get_module_logger
+from config.settings import (
+    AUDIO_SAMPLE_RATE, DEFAULT_AUDIO_DURATION, AUDIO_OUTPUT_DIR,
+    GOOGLE_APPLICATION_CREDENTIALS
+)
 
 # Get logger for this module
 logger = get_module_logger(__name__)
@@ -18,45 +22,28 @@ logger = get_module_logger(__name__)
 speech_client = speech.SpeechClient()
 tts_client = texttospeech.TextToSpeechClient()
 
-# Global variable for data directory
-DATA_DIR = None
+# Set Google Cloud credentials
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GOOGLE_APPLICATION_CREDENTIALS
 
-def set_data_dir(path):
-    """
-    Set the global DATA_DIR variable.
-
-    This function should be called before using any functions that rely on DATA_DIR.
-
-    :param path: The path to the data directory
-    """
-    global DATA_DIR
-    DATA_DIR = path
-    logger.info(f"Data directory set to: {DATA_DIR}")
-
-def record_audio(duration=5, sample_rate=16000):
+def record_audio(duration=DEFAULT_AUDIO_DURATION, sample_rate=AUDIO_SAMPLE_RATE):
     """
     Records audio from the microphone and saves it to a file in the data folder.
     
-    :param duration: The duration of the recording in seconds (default: 5)
-    :param sample_rate: The sample rate of the audio (default: 16000)
+    :param duration: The duration of the recording in seconds (default: DEFAULT_AUDIO_DURATION)
+    :param sample_rate: The sample rate of the audio (default: AUDIO_SAMPLE_RATE)
     :return: The path of the saved audio file or None if an error occurred
-    :raises ValueError: If DATA_DIR is not set
     """
-    if DATA_DIR is None:
-        logger.error("DATA_DIR is not set. Call set_data_dir() first.")
-        raise ValueError("DATA_DIR is not set. Call set_data_dir() first.")
-    
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
 
     filename = generate_unique_filename("recorded_audio", ".wav")
-    full_path = os.path.join(DATA_DIR, filename)
+    full_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
 
     logger.info(f"Starting audio recording. Duration: {duration}s, Sample rate: {sample_rate}Hz")
     try:
         p = pyaudio.PyAudio()
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
         logger.info(f"Recording for {duration} seconds...")
 
         stream = p.open(format=FORMAT, channels=CHANNELS, rate=sample_rate, input=True, frames_per_buffer=CHUNK)
@@ -102,7 +89,7 @@ def transcribe_audio(audio_file, language_code):
         audio = speech.RecognitionAudio(content=content)
         config = speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=16000,
+            sample_rate_hertz=AUDIO_SAMPLE_RATE,
             language_code=language_code,
         )
 
@@ -189,9 +176,9 @@ def save_audio(audio_content, base_filename="output"):
     """
     logger.info(f"Saving audio content. Base filename: {base_filename}")
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
         filename = generate_unique_filename(base_filename, ".mp3")
-        full_path = os.path.join(DATA_DIR, filename)
+        full_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
         
         write_file(audio_content, full_path)
         logger.info(f'Audio content written to file: "{full_path}"')
@@ -244,7 +231,7 @@ def generate_audio_book(input_file, output_file, source_lang, target_lang, voice
             logger.exception(f"Error in synthesize_speech for chunk {i+1}: {str(e)}")
             raise
 
-        temp_file = f"temp_audio_{i}.mp3"
+        temp_file = os.path.join(AUDIO_OUTPUT_DIR, f"temp_audio_{i}.mp3")
         write_file(response.audio_content, temp_file)
 
         audio_segment = AudioSegment.from_mp3(temp_file)
@@ -299,7 +286,7 @@ def transcribe_audio_file(audio_file_path, language_code):
 
     config = speech.RecognitionConfig(
         encoding=encoding,
-        sample_rate_hertz=16000,
+        sample_rate_hertz=AUDIO_SAMPLE_RATE,
         language_code=language_code,
     )
 
