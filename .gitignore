@@ -22,3 +22,9 @@ Thumbs.db
 # data
 data/*
 !data/.gitkeep
+
+# Add this line to ignore the logs directory
+logs/
+
+# Ignore all .log files in case any end up outside the logs directory
+*.log

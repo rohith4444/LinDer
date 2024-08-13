@@ -70,6 +70,10 @@ This application provides various speech and text processing capabilities, inclu
 
 Note: The `secrets` directory is git-ignored to prevent accidental commits of sensitive information. Make sure to securely share the credentials file with team members through a secure channel, not through version control.
 
+## Logging
+
+This project uses a comprehensive logging system to track operations and aid in debugging. For more information on how logging is implemented and how to use it in development, please see the [Logging Documentation](docs/logging.md).
+
 ## Usage
 
 Run the main application:

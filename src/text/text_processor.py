@@ -1,6 +1,10 @@
 import os
 from openai import OpenAI
 from utils.common import read_file, write_file
+from logging_config import get_module_logger
+
+# Get logger for this module
+logger = get_module_logger(__name__)
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -14,6 +18,7 @@ def translate_text(text, source_lang, target_lang):
     :param target_lang: The target language
     :return: Translated text or None if translation fails
     """
+    logger.info(f"Starting text translation from {source_lang} to {target_lang}")
     try:
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -22,9 +27,11 @@ def translate_text(text, source_lang, target_lang):
                 {"role": "user", "content": text}
             ]
         )
-        return response.choices[0].message.content.strip()
+        translated_text = response.choices[0].message.content.strip()
+        logger.info("Text translation completed successfully")
+        return translated_text
     except Exception as e:
-        print(f"An error occurred during translation: {str(e)}")
+        logger.exception(f"An error occurred during translation: {str(e)}")
         return None
 
 def analyze_sentiment(text):
@@ -34,6 +41,7 @@ def analyze_sentiment(text):
     :param text: The text to analyze
     :return: Sentiment analysis result or None if analysis fails
     """
+    logger.info("Starting sentiment analysis")
     try:
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -42,9 +50,11 @@ def analyze_sentiment(text):
                 {"role": "user", "content": text}
             ]
         )
-        return response.choices[0].message.content.strip()
+        sentiment = response.choices[0].message.content.strip()
+        logger.info(f"Sentiment analysis completed. Result: {sentiment}")
+        return sentiment
     except Exception as e:
-        print(f"An error occurred during sentiment analysis: {str(e)}")
+        logger.exception(f"An error occurred during sentiment analysis: {str(e)}")
         return None
 
 def summarize_text(text, max_words=100):
@@ -55,6 +65,7 @@ def summarize_text(text, max_words=100):
     :param max_words: The maximum number of words for the summary
     :return: Summarized text or None if summarization fails
     """
+    logger.info(f"Starting text summarization. Max words: {max_words}")
     try:
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -63,9 +74,11 @@ def summarize_text(text, max_words=100):
                 {"role": "user", "content": text}
             ]
         )
-        return response.choices[0].message.content.strip()
+        summary = response.choices[0].message.content.strip()
+        logger.info("Text summarization completed successfully")
+        return summary
     except Exception as e:
-        print(f"An error occurred during text summarization: {str(e)}")
+        logger.exception(f"An error occurred during text summarization: {str(e)}")
         return None
 
 def translate_file(input_file, output_file, source_lang, target_lang):
@@ -78,13 +91,21 @@ def translate_file(input_file, output_file, source_lang, target_lang):
     :param target_lang: Target language
     :return: Path to the translated file
     """
+    logger.info(f"Starting file translation. Input: {input_file}, Output: {output_file}")
+    logger.info(f"Source language: {source_lang}, Target language: {target_lang}")
     try:
         content = read_file(input_file)
+        logger.info("Input file read successfully")
         translated_content = translate_text(content, source_lang, target_lang)
-        write_file(translated_content, output_file)
-        return output_file
+        if translated_content:
+            write_file(translated_content, output_file)
+            logger.info(f"Translated content written to: {output_file}")
+            return output_file
+        else:
+            logger.error("Translation failed, no content to write")
+            return None
     except Exception as e:
-        print(f"An error occurred during file translation: {str(e)}")
+        logger.exception(f"An error occurred during file translation: {str(e)}")
         return None
 
 def process_text(text, operation, **kwargs):
@@ -96,6 +117,7 @@ def process_text(text, operation, **kwargs):
     :param kwargs: Additional keyword arguments for specific operations
     :return: Processed text or None if processing fails
     """
+    logger.info(f"Processing text with operation: {operation}")
     if operation == 'translate':
         return translate_text(text, kwargs['source_lang'], kwargs['target_lang'])
     elif operation == 'analyze_sentiment':
@@ -103,7 +125,7 @@ def process_text(text, operation, **kwargs):
     elif operation == 'summarize':
         return summarize_text(text, kwargs.get('max_words', 100))
     else:
-        print(f"Unsupported operation: {operation}")
+        logger.error(f"Unsupported operation: {operation}")
         return None
 
 def process_file(input_file, output_file, operation, **kwargs):
@@ -116,14 +138,18 @@ def process_file(input_file, output_file, operation, **kwargs):
     :param kwargs: Additional keyword arguments for specific operations
     :return: Path to the processed file or None if processing fails
     """
+    logger.info(f"Processing file. Input: {input_file}, Output: {output_file}, Operation: {operation}")
     try:
         content = read_file(input_file)
+        logger.info("Input file read successfully")
         processed_content = process_text(content, operation, **kwargs)
         if processed_content:
             write_file(processed_content, output_file)
+            logger.info(f"Processed content written to: {output_file}")
             return output_file
         else:
+            logger.error("Processing failed, no content to write")
             return None
     except Exception as e:
-        print(f"An error occurred during file processing: {str(e)}")
+        logger.exception(f"An error occurred during file processing: {str(e)}")
         return None
