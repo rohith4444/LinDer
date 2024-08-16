@@ -1,6 +1,6 @@
 import os
 from openai import OpenAI
-from utils.common import read_file, write_file
+from utils.common import read_file, write_file, split_content, check_text_size
 from logging_config import get_module_logger
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL, DOCUMENT_INPUT_DIR, DOCUMENT_OUTPUT_DIR
 
@@ -9,6 +9,65 @@ logger = get_module_logger(__name__)
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
+def translate_text_chunk(chunk, source_lang, target_lang):
+    """
+    Translates a chunk of text from source language to target language using OpenAI's API.
+    
+    :param chunk: The chunk of text to translate
+    :param source_lang: The source language
+    :param target_lang: The target language
+    :return: Translated text chunk or None if translation fails
+    """
+    logger.info(f"Translating text chunk from {source_lang} to {target_lang}")
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": f"You are a translator. Translate the following text from {source_lang} to {target_lang}."},
+                {"role": "user", "content": chunk}
+            ]
+        )
+        translated_chunk = response.choices[0].message.content.strip()
+        logger.info("Text chunk translation completed successfully")
+        return translated_chunk
+    except Exception as e:
+        logger.exception(f"An error occurred during chunk translation: {str(e)}")
+        return None
+
+def translate_large_text(text, source_lang, target_lang, chunk_size=4000):
+    """
+    Translates large text by splitting it into chunks and translating each chunk.
+    
+    :param text: The text to translate
+    :param source_lang: The source language
+    :param target_lang: The target language
+    :param chunk_size: The maximum size of each chunk
+    :return: Translated text or None if translation fails
+    """
+    logger.info(f"Starting large text translation from {source_lang} to {target_lang}")
+    try:
+        chunks = split_content(text, chunk_size)
+        translated_chunks = []
+
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Translating chunk {i+1}/{len(chunks)}")
+            translated_chunk = translate_text_chunk(chunk, source_lang, target_lang)
+            if translated_chunk:
+                translated_chunks.append(translated_chunk)
+            else:
+                logger.error(f"Failed to translate chunk {i+1}")
+
+        if len(translated_chunks) == len(chunks):
+            translated_text = " ".join(translated_chunks)
+            logger.info("Large text translation completed successfully")
+            return translated_text
+        else:
+            logger.error("Large text translation failed")
+            return None
+    except Exception as e:
+        logger.exception(f"An error occurred during large text translation: {str(e)}")
+        return None
 
 def translate_text(text, source_lang, target_lang):
     """
@@ -21,18 +80,14 @@ def translate_text(text, source_lang, target_lang):
     """
     logger.info(f"Starting text translation from {source_lang} to {target_lang}")
     try:
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": f"You are a translator. Translate the following text from {source_lang} to {target_lang}."},
-                {"role": "user", "content": text}
-            ]
-        )
-        translated_text = response.choices[0].message.content.strip()
-        logger.info("Text translation completed successfully")
-        return translated_text
+        if check_text_size(text):
+            logger.info("Text is large, using large text translation")
+            return translate_large_text(text, source_lang, target_lang)
+        else:
+            logger.info("Text is small, using regular text translation")
+            return translate_text_chunk(text, source_lang, target_lang)
     except Exception as e:
-        logger.exception(f"An error occurred during translation: {str(e)}")
+        logger.exception(f"An error occurred during text translation: {str(e)}")
         return None
 
 def analyze_sentiment(text):
@@ -82,33 +137,6 @@ def summarize_text(text, max_words=100):
         logger.exception(f"An error occurred during text summarization: {str(e)}")
         return None
 
-def translate_file(input_file, output_file, source_lang, target_lang):
-    """
-    Translates the content of a file from source language to target language.
-    
-    :param input_file: Path to the input file
-    :param output_file: Path to save the translated file
-    :param source_lang: Source language
-    :param target_lang: Target language
-    :return: Path to the translated file
-    """
-    logger.info(f"Starting file translation. Input: {input_file}, Output: {output_file}")
-    logger.info(f"Source language: {source_lang}, Target language: {target_lang}")
-    try:
-        content = read_file(input_file)
-        logger.info("Input file read successfully")
-        translated_content = translate_text(content, source_lang, target_lang)
-        if translated_content:
-            write_file(translated_content, output_file)
-            logger.info(f"Translated content written to: {output_file}")
-            return output_file
-        else:
-            logger.error("Translation failed, no content to write")
-            return None
-    except Exception as e:
-        logger.exception(f"An error occurred during file translation: {str(e)}")
-        return None
-
 def process_text(text, operation, **kwargs):
     """
     Processes text based on the specified operation.
@@ -155,6 +183,33 @@ def process_file(input_file, output_file, operation, **kwargs):
         logger.exception(f"An error occurred during file processing: {str(e)}")
         return None
 
+def translate_file(input_file, output_file, source_lang, target_lang):
+    """
+    Translates the content of a file from source language to target language.
+    
+    :param input_file: Path to the input file
+    :param output_file: Path to save the translated file
+    :param source_lang: Source language
+    :param target_lang: Target language
+    :return: Path to the translated file
+    """
+    logger.info(f"Starting file translation. Input: {input_file}, Output: {output_file}")
+    logger.info(f"Source language: {source_lang}, Target language: {target_lang}")
+    try:
+        content = read_file(input_file)
+        logger.info("Input file read successfully")
+        translated_content = translate_text(content, source_lang, target_lang)
+        if translated_content:
+            write_file(translated_content, output_file)
+            logger.info(f"Translated content written to: {output_file}")
+            return output_file
+        else:
+            logger.error("Translation failed, no content to write")
+            return None
+    except Exception as e:
+        logger.exception(f"An error occurred during file translation: {str(e)}")
+        return None
+    
 def batch_translate_files(input_dir=DOCUMENT_INPUT_DIR, output_dir=DOCUMENT_OUTPUT_DIR, source_lang='en', target_lang='es'):
     """
     Translates all text files in the input directory and saves the translated files in the output directory.
@@ -167,19 +222,22 @@ def batch_translate_files(input_dir=DOCUMENT_INPUT_DIR, output_dir=DOCUMENT_OUTP
     logger.info(f"Starting batch translation. Input dir: {input_dir}, Output dir: {output_dir}")
     logger.info(f"Source language: {source_lang}, Target language: {target_lang}")
     
-    os.makedirs(output_dir, exist_ok=True)
-    
-    for filename in os.listdir(input_dir):
-        if filename.endswith('.txt'):  # Assuming we're only translating .txt files
-            input_file = os.path.join(input_dir, filename)
-            output_file = os.path.join(output_dir, f"translated_{filename}")
-            
-            logger.info(f"Translating file: {filename}")
-            result = translate_file(input_file, output_file, source_lang, target_lang)
-            
-            if result:
-                logger.info(f"Successfully translated: {filename}")
-            else:
-                logger.error(f"Failed to translate: {filename}")
-    
-    logger.info("Batch translation completed")
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        
+        for filename in os.listdir(input_dir):
+            if filename.endswith('.txt'):  # Assuming we're only translating .txt files
+                input_file = os.path.join(input_dir, filename)
+                output_file = os.path.join(output_dir, f"translated_{filename}")
+                
+                logger.info(f"Translating file: {filename}")
+                result = translate_file(input_file, output_file, source_lang, target_lang)
+                
+                if result:
+                    logger.info(f"Successfully translated: {filename}")
+                else:
+                    logger.error(f"Failed to translate: {filename}")
+        
+        logger.info("Batch translation completed")
+    except Exception as e:
+        logger.exception(f"An error occurred during batch translation: {str(e)}")

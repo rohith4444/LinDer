@@ -5,8 +5,11 @@ from config.settings import (
     AUDIO_TO_TEXT_OUTPUT_DIR, AUDIO_TRANSLATION_INPUT_DIR, AUDIO_TRANSLATION_OUTPUT_DIR,
     DEFAULT_AUDIO_DURATION
 )
-from speech.speech_processor import record_audio, transcribe_audio, text_to_speech, play_audio, save_audio, generate_audio_book, transcribe_audio_file, translate_audio_file, set_data_dir
-from text.text_processor import translate_text, translate_file, process_text, process_file
+from speech.speech_processor import (
+    record_audio, process_audio, process_audio_file, play_audio, save_audio,
+    generate_audio_book, save_large_audio
+)
+from text.text_processor import process_text, process_file
 from utils.common import get_language_choice, get_filename, load_env_variables, write_file, read_file
 from logging_config import get_module_logger
 
@@ -71,6 +74,107 @@ def main():
             logger.warning(f"Invalid choice entered: {choice}")
             print("Invalid choice. Please try again.")
 
+def handle_speech_to_text(languages, translate=False):
+    """
+    Handle speech-to-text conversion with optional translation.
+    """
+    logger.info(f"Starting speech-to-text process. Translation: {translate}")
+    source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
+    duration = int(input(f"Enter recording duration in seconds (default: {DEFAULT_AUDIO_DURATION}): ") or DEFAULT_AUDIO_DURATION)
+    audio_file = record_audio(duration)
+    
+    with open(audio_file, 'rb') as audio:
+        audio_content = audio.read()
+    
+    text = process_audio(audio_content, 'transcribe', language_code=source_code)
+    logger.info("Speech transcription completed")
+    print(f"Transcribed text: {text}")
+
+    if translate:
+        target_lang, _ = get_language_choice("Select the target language for translation:", languages)
+        translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
+        logger.info("Text translation completed")
+        print(f"Translated text ({target_lang}): {translated_text}")
+
+def handle_text_to_speech(languages, voices, translate=False):
+    """
+    Handle text-to-speech conversion with optional translation.
+    """
+    logger.info(f"Starting text-to-speech process. Translation: {translate}")
+    if translate:
+        source_lang, _ = get_language_choice("Select the source language:", languages)
+        text = input("Enter the text to translate and convert to speech: ")
+        target_lang, target_code = get_language_choice("Select the target language for translation and speech:", languages)
+        translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
+        logger.info("Text translation completed")
+        print(f"Translated text: {translated_text}")
+    else:
+        target_lang, target_code = get_language_choice("Select the language for text-to-speech:", languages)
+        translated_text = input("Enter the text to convert to speech: ")
+
+    voice_name, voice_gender = get_language_choice("Select the voice gender:", voices)
+    audio_content = process_audio(translated_text, 'text_to_speech', text=translated_text, language_code=target_code, voice_gender=voice_gender)
+    if audio_content:
+        logger.info("Text-to-speech conversion completed")
+        play_audio(audio_content)
+        save_option = input("Do you want to save the audio? (y/n): ").lower()
+        if save_option == 'y':
+            base_filename = input("Enter a filename (without extension, default: output): ").strip() or "output"
+            saved_path = save_audio(audio_content, base_filename)
+            if saved_path:
+                logger.info(f"Audio saved to: {saved_path}")
+                print(f"Audio saved as: {saved_path}")
+
+def handle_text_translation(languages):
+    """
+    Handle text-to-text translation.
+    """
+    logger.info("Starting text-to-text translation process")
+    source_lang, _ = get_language_choice("Select the source language:", languages)
+    target_lang, _ = get_language_choice("Select the target language:", languages)
+    text = input("Enter the text to translate: ")
+    translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
+    logger.info("Text translation completed")
+    print(f"Translated text: {translated_text}")
+
+def handle_speech_to_speech(languages, voices):
+    """
+    Handle speech-to-speech translation.
+    """
+    logger.info("Starting speech-to-speech translation process")
+    source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
+    target_lang, target_code = get_language_choice("Select the target language for translation:", languages)
+    
+    duration = int(input(f"Enter recording duration in seconds (default: {DEFAULT_AUDIO_DURATION}): ") or DEFAULT_AUDIO_DURATION)
+    logger.info(f"Recording audio for {duration} seconds")
+    audio_file = record_audio(duration)
+    
+    with open(audio_file, 'rb') as audio:
+        audio_content = audio.read()
+    
+    logger.info("Transcribing and translating audio")
+    translated_text = process_audio(audio_content, 'translate', source_lang=source_lang, target_lang=target_lang)
+    logger.info("Audio transcription and translation completed")
+    print(f"Translated text: {translated_text}")
+
+    voice_name, voice_gender = get_language_choice("Select the voice gender for the output speech:", voices)
+    logger.info(f"Converting translated text to speech with {voice_name} voice")
+    audio_content = process_audio(translated_text, 'text_to_speech', text=translated_text, language_code=target_code, voice_gender=voice_gender)
+    if audio_content:
+        logger.info("Playing translated audio")
+        play_audio(audio_content)
+        save_option = input("Do you want to save the translated audio? (y/n): ").lower()
+        if save_option == 'y':
+            base_filename = input("Enter a filename (without extension, default: translated_speech): ").strip() or "translated_speech"
+            saved_path = save_audio(audio_content, base_filename)
+            if saved_path:
+                logger.info(f"Translated audio saved as: {saved_path}")
+                print(f"Translated audio saved as: {saved_path}")
+        else:
+            logger.info("User chose not to save the translated audio")
+    else:
+        logger.error("Failed to convert translated text to speech")
+
 def handle_document_translation(languages):
     """
     Handle the translation of document files.
@@ -120,15 +224,37 @@ def handle_audio_book_generation(languages, voices):
     print(f"Voice gender: {voice_name}")
 
     try:
-        generated_file = generate_audio_book(input_file, output_file, source_code, target_code, voice_gender)
-        logger.info(f"Audio book generated successfully: {generated_file}")
-        print(f"Audio book generated successfully!")
-        print(f"Saved as: {generated_file}")
+        # Read the input file
+        content = read_file(input_file)
+        logger.info("Input file read successfully")
+
+        # Translate if necessary
+        if source_lang != target_lang:
+            logger.info("Translating content")
+            content = process_text(content, 'translate', source_lang=source_lang, target_lang=target_lang)
+            logger.info("Content translation completed")
+
+        # Convert text to speech
+        audio_content = process_audio(content, 'text_to_speech', text=content, language_code=target_code, voice_gender=voice_gender)
         
-        play_option = input("Would you like to play the generated audio? (y/n): ").lower()
-        if play_option == 'y':
-            logger.info("Playing generated audio book")
-            play_audio(generated_file)
+        if audio_content:
+            # Save the audio book
+            if isinstance(audio_content, list):
+                generated_file = save_large_audio(audio_content, os.path.splitext(output_file)[0])
+            else:
+                generated_file = save_audio(audio_content, os.path.splitext(output_file)[0])
+            
+            logger.info(f"Audio book generated successfully: {generated_file}")
+            print(f"Audio book generated successfully!")
+            print(f"Saved as: {generated_file}")
+            
+            play_option = input("Would you like to play the generated audio? (y/n): ").lower()
+            if play_option == 'y':
+                logger.info("Playing generated audio book")
+                play_audio(generated_file)
+        else:
+            logger.error("Failed to generate audio content")
+            print("Failed to generate audio book.")
     except Exception as e:
         logger.exception(f"An error occurred during audio book generation: {str(e)}")
         print(f"An error occurred during audio book generation: {str(e)}")
@@ -148,16 +274,8 @@ def handle_audio_to_text_translation(languages):
     output_file = os.path.join(AUDIO_TO_TEXT_OUTPUT_DIR, output_filename)
 
     try:
-        transcribed_text = transcribe_audio_file(input_file, source_code)
-        logger.info("Audio transcription completed")
-        print(f"Transcribed text: {transcribed_text}")
-
-        translated_text = process_text(transcribed_text, 'translate', source_lang=source_lang, target_lang=target_lang)
-        logger.info("Text translation completed")
-        print(f"Translated text: {translated_text}")
-
-        write_file(translated_text, output_file)
-        logger.info(f"Translated text saved to: {output_file}")
+        process_audio_file(input_file, output_file, 'translate', source_lang=source_lang, target_lang=target_lang)
+        logger.info(f"Audio transcription and translation completed. Output saved to: {output_file}")
         print(f"Translated text saved as: {output_file}")
     except Exception as e:
         logger.exception(f"An error occurred during audio-to-text translation: {str(e)}")
@@ -179,117 +297,17 @@ def handle_audio_to_audio_translation(languages, voices):
     output_file = os.path.join(AUDIO_TRANSLATION_OUTPUT_DIR, output_filename)
 
     try:
-        translated_audio_file = translate_audio_file(input_file, output_file, source_code, target_code, voice_gender)
-        logger.info(f"Audio translation completed: {translated_audio_file}")
-        print(f"Translated audio saved as: {translated_audio_file}")
+        process_audio_file(input_file, output_file, 'translate', source_lang=source_code, target_lang=target_code, voice_gender=voice_gender)
+        logger.info(f"Audio translation completed: {output_file}")
+        print(f"Translated audio saved as: {output_file}")
         
         play_option = input("Would you like to play the translated audio? (y/n): ").lower()
         if play_option == 'y':
             logger.info("Playing translated audio")
-            play_audio(translated_audio_file)
+            play_audio(output_file)
     except Exception as e:
         logger.exception(f"An error occurred during audio translation: {str(e)}")
         print(f"An error occurred during audio translation: {str(e)}")
-
-def handle_speech_to_text(languages, translate=False):
-    """
-    Handle speech-to-text conversion with optional translation.
-    """
-    logger.info(f"Starting speech-to-text process. Translation: {translate}")
-    source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
-    duration = int(input(f"Enter recording duration in seconds (default: {DEFAULT_AUDIO_DURATION}): ") or DEFAULT_AUDIO_DURATION)
-    audio_file = record_audio(duration)
-    text = transcribe_audio(audio_file, source_code)
-    logger.info("Speech transcription completed")
-    print(f"Transcribed text: {text}")
-
-    if translate:
-        target_lang, _ = get_language_choice("Select the target language for translation:", languages)
-        translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
-        logger.info("Text translation completed")
-        print(f"Translated text ({target_lang}): {translated_text}")
-
-def handle_text_to_speech(languages, voices, translate=False):
-    """
-    Handle text-to-speech conversion with optional translation.
-    """
-    logger.info(f"Starting text-to-speech process. Translation: {translate}")
-    if translate:
-        source_lang, _ = get_language_choice("Select the source language:", languages)
-        text = input("Enter the text to translate and convert to speech: ")
-        target_lang, target_code = get_language_choice("Select the target language for translation and speech:", languages)
-        translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
-        logger.info("Text translation completed")
-        print(f"Translated text: {translated_text}")
-    else:
-        target_lang, target_code = get_language_choice("Select the language for text-to-speech:", languages)
-        text = input("Enter the text to convert to speech: ")
-        translated_text = text
-
-    voice_name, voice_gender = get_language_choice("Select the voice gender:", voices)
-    audio_content = text_to_speech(translated_text, target_code, voice_gender)
-    if audio_content:
-        logger.info("Text-to-speech conversion completed")
-        play_audio(audio_content)
-        save_option = input("Do you want to save the audio? (y/n): ").lower()
-        if save_option == 'y':
-            base_filename = input("Enter a filename (without extension, default: output): ").strip() or "output"
-            saved_path = save_audio(audio_content, base_filename)
-            if saved_path:
-                logger.info(f"Audio saved to: {saved_path}")
-                print(f"Audio saved as: {saved_path}")
-
-def handle_text_translation(languages):
-    """
-    Handle text-to-text translation.
-    """
-    logger.info("Starting text-to-text translation process")
-    source_lang, _ = get_language_choice("Select the source language:", languages)
-    target_lang, _ = get_language_choice("Select the target language:", languages)
-    text = input("Enter the text to translate: ")
-    translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
-    logger.info("Text translation completed")
-    print(f"Translated text: {translated_text}")
-
-def handle_speech_to_speech(languages, voices):
-    """
-    Handle speech-to-speech translation.
-    """
-    logger.info("Starting speech-to-speech translation process")
-    source_lang, source_code = get_language_choice("Select the language you'll speak in:", languages)
-    target_lang, target_code = get_language_choice("Select the target language for translation:", languages)
-    
-    duration = int(input(f"Enter recording duration in seconds (default: {DEFAULT_AUDIO_DURATION}): ") or DEFAULT_AUDIO_DURATION)
-    logger.info(f"Recording audio for {duration} seconds")
-    audio_file = record_audio(duration)
-    
-    logger.info("Transcribing audio")
-    text = transcribe_audio(audio_file, source_code)
-    logger.info("Audio transcription completed")
-    print(f"Transcribed text: {text}")
-
-    logger.info("Translating transcribed text")
-    translated_text = process_text(text, 'translate', source_lang=source_lang, target_lang=target_lang)
-    logger.info("Text translation completed")
-    print(f"Translated text: {translated_text}")
-
-    voice_name, voice_gender = get_language_choice("Select the voice gender for the output speech:", voices)
-    logger.info(f"Converting translated text to speech with {voice_name} voice")
-    audio_content = text_to_speech(translated_text, target_code, voice_gender)
-    if audio_content:
-        logger.info("Playing translated audio")
-        play_audio(audio_content)
-        save_option = input("Do you want to save the translated audio? (y/n): ").lower()
-        if save_option == 'y':
-            base_filename = input("Enter a filename (without extension, default: translated_speech): ").strip() or "translated_speech"
-            saved_path = save_audio(audio_content, base_filename)
-            if saved_path:
-                logger.info(f"Translated audio saved as: {saved_path}")
-                print(f"Translated audio saved as: {saved_path}")
-        else:
-            logger.info("User chose not to save the translated audio")
-    else:
-        logger.error("Failed to convert translated text to speech")
 
 def handle_sentiment_analysis():
     """

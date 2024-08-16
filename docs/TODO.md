@@ -11,11 +11,14 @@ Consider moving configuration variables (like API keys, language options, etc.) 
 problem with paths
 do unit testing and user case testing
 
-implement for larger files.
-
 plan the entire product devlopment
 design ui
 
 start working through development
+
+In testing:
+
+We're not testing actual audio processing or API calls, but rather ensuring our functions handle the responses correctly.
+We're not testing every possible input or error case. In a more comprehensive test suite, you'd want to add tests for error handling, edge cases, etc.
 
 aug 24,25 sep 7,8,14,15,21,22 oct all month

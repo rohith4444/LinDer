@@ -7,8 +7,8 @@ from datetime import datetime
 from google.cloud import speech, texttospeech
 from pydub import AudioSegment
 
-from text.text_processor import process_text
-from utils.common import read_file, write_file, generate_unique_filename
+from text.text_processor import process_text, translate_large_text
+from utils.common import read_file, write_file, generate_unique_filename, split_content, check_audio_duration
 from logging_config import get_module_logger
 from config.settings import (
     AUDIO_SAMPLE_RATE, DEFAULT_AUDIO_DURATION, AUDIO_OUTPUT_DIR,
@@ -24,6 +24,74 @@ tts_client = texttospeech.TextToSpeechClient()
 
 # Set Google Cloud credentials
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GOOGLE_APPLICATION_CREDENTIALS
+
+def process_audio(audio_content, operation, **kwargs):
+    """
+    Processes audio content based on the specified operation.
+    
+    :param audio_content: The audio content to process (bytes)
+    :param operation: The operation to perform ('transcribe', 'translate', or 'text_to_speech')
+    :param kwargs: Additional keyword arguments for specific operations
+    :return: Processed audio content or text, depending on the operation
+    """
+    logger.info(f"Processing audio with operation: {operation}")
+    try:
+        # Check audio size/duration
+        is_large = len(audio_content) > 10 * 1024 * 1024  # Consider audio large if it's more than 10MB
+
+        if operation == 'transcribe':
+            if is_large:
+                return transcribe_large_audio(audio_content, kwargs['language_code'])
+            else:
+                return transcribe_audio(audio_content, kwargs['language_code'])
+        elif operation == 'translate':
+            if is_large:
+                transcribed_text = transcribe_large_audio(audio_content, kwargs['source_lang'])
+            else:
+                transcribed_text = transcribe_audio(audio_content, kwargs['source_lang'])
+            return process_text(transcribed_text, 'translate', source_lang=kwargs['source_lang'], target_lang=kwargs['target_lang'])
+        elif operation == 'text_to_speech':
+            if len(kwargs['text'].encode('utf-8')) > 5000:
+                return text_to_speech_large(kwargs['text'], kwargs['language_code'], kwargs['voice_gender'])
+            else:
+                return text_to_speech(kwargs['text'], kwargs['language_code'], kwargs['voice_gender'])
+        else:
+            logger.error(f"Unsupported operation: {operation}")
+            return None
+    except Exception as e:
+        logger.exception(f"An error occurred during audio processing: {str(e)}")
+        return None
+    
+def process_audio_file(input_file, output_file, operation, **kwargs):
+    """
+    Processes an audio file based on the specified operation.
+    
+    :param input_file: Path to the input audio file
+    :param output_file: Path to save the processed audio file
+    :param operation: The operation to perform ('transcribe', 'translate', or 'text_to_speech')
+    :param kwargs: Additional keyword arguments for specific operations
+    :return: Path to the processed file or None if processing fails
+    """
+    logger.info(f"Processing audio file. Input: {input_file}, Output: {output_file}, Operation: {operation}")
+    try:
+        with open(input_file, 'rb') as audio_file:
+            audio_content = audio_file.read()
+        
+        processed_content = process_audio(audio_content, operation, **kwargs)
+        
+        if processed_content:
+            if operation in ['transcribe', 'translate']:
+                write_file(processed_content, output_file)
+            else:  # text_to_speech
+                save_audio(processed_content, os.path.splitext(output_file)[0])
+            logger.info(f"Processed content saved to: {output_file}")
+            return output_file
+        else:
+            logger.error("Processing failed, no content to write")
+            return None
+    except Exception as e:
+        logger.exception(f"An error occurred during audio file processing: {str(e)}")
+        return None
 
 def record_audio(duration=DEFAULT_AUDIO_DURATION, sample_rate=AUDIO_SAMPLE_RATE):
     """
@@ -107,6 +175,39 @@ def transcribe_audio(audio_file, language_code):
         logger.exception(f"Error during audio transcription: {e}")
         return ""
 
+def transcribe_large_audio(audio_file, language_code):
+    """
+    Transcribes a large audio file to text using Google Cloud Speech-to-Text API with long-running recognition.
+    
+    :param audio_file: The path to the audio file
+    :param language_code: The language code of the audio
+    :return: The transcribed text
+    """
+    logger.info(f"Starting large audio transcription. File: {audio_file}, Language: {language_code}")
+    client = speech.SpeechClient()
+    
+    with io.open(audio_file, "rb") as audio_file:
+        content = audio_file.read()
+    
+    audio = speech.RecognitionAudio(content=content)
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=AUDIO_SAMPLE_RATE,
+        language_code=language_code,
+        enable_automatic_punctuation=True,
+    )
+
+    operation = client.long_running_recognize(config=config, audio=audio)
+    logger.info("Waiting for operation to complete...")
+    response = operation.result(timeout=None)  # Set timeout to None for very large files
+
+    transcription = ""
+    for result in response.results:
+        transcription += result.alternatives[0].transcript + " "
+
+    logger.info("Large audio transcription completed successfully")
+    return transcription.strip()
+
 def text_to_speech(text, language_code, voice_gender):
     """
     Converts text to speech using Google Cloud Text-to-Speech API.
@@ -127,6 +228,35 @@ def text_to_speech(text, language_code, voice_gender):
         return response.audio_content
     except Exception as e:
         logger.exception(f"An error occurred during text-to-speech conversion: {str(e)}")
+        return None
+
+def text_to_speech_large(text, language_code, voice_gender, chunk_size=5000):
+    """
+    Converts large text to speech using Google Cloud Text-to-Speech API by splitting it into chunks.
+    
+    :param text: The text to convert to speech
+    :param language_code: The language code for the text
+    :param voice_gender: The gender of the voice to use
+    :param chunk_size: The maximum size of each chunk
+    :return: List of audio contents or None if conversion fails
+    """
+    logger.info(f"Starting large text-to-speech conversion. Language: {language_code}, Voice gender: {voice_gender}")
+    chunks = split_content(text, chunk_size)
+    audio_contents = []
+
+    for i, chunk in enumerate(chunks):
+        logger.info(f"Converting chunk {i+1}/{len(chunks)} to speech")
+        audio_content = text_to_speech(chunk, language_code, voice_gender)
+        if audio_content:
+            audio_contents.append(audio_content)
+        else:
+            logger.error(f"Failed to convert chunk {i+1} to speech")
+
+    if len(audio_contents) == len(chunks):
+        logger.info("Large text-to-speech conversion completed successfully")
+        return audio_contents
+    else:
+        logger.error("Large text-to-speech conversion failed")
         return None
 
 def play_audio(audio_input):
@@ -187,144 +317,29 @@ def save_audio(audio_content, base_filename="output"):
         logger.exception(f"An error occurred while saving the audio: {str(e)}")
         return None
 
-def generate_audio_book(input_file, output_file, source_lang, target_lang, voice_gender):
+def save_large_audio(audio_contents, base_filename="output"):
     """
-    Generates an audio book from a text file, with optional translation.
+    Saves large audio content (multiple chunks) to a file in the data folder with a unique filename.
     
-    :param input_file: Path to the input text file
-    :param output_file: Path to save the output audio file
-    :param source_lang: Source language code
-    :param target_lang: Target language code
-    :param voice_gender: Gender of the voice for text-to-speech
-    :return: Path to the generated audio file
+    :param audio_contents: List of audio contents to save
+    :param base_filename: The base name for the file (default: "output")
+    :return: The full path of the saved file or None if an error occurred
     """
-    logger.info(f"Starting audio book generation. Input: {input_file}, Output: {output_file}")
-    logger.info(f"Source language: {source_lang}, Target language: {target_lang}, Voice gender: {voice_gender}")
+    logger.info(f"Saving large audio content. Base filename: {base_filename}")
     try:
-        content = read_file(input_file)
-        logger.info("Input file read successfully")
-    except Exception as e:
-        logger.exception(f"Error reading input file: {str(e)}")
-        raise ValueError(f"Error reading input file: {str(e)}")
-
-    if source_lang != target_lang:
-        logger.info("Translating content")
-        content = process_text(content, 'translate', source_lang=source_lang, target_lang=target_lang)
-        logger.info("Content translation completed")
-
-    client = texttospeech.TextToSpeechClient()
-    language_code = target_lang.split('-')[0]
-    voice = texttospeech.VoiceSelectionParams(language_code=language_code, ssml_gender=voice_gender)
-    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-
-    chunks = split_content(content)
-    logger.info(f"Content split into {len(chunks)} chunks")
-    audio_segments = []
-
-    for i, chunk in enumerate(chunks):
-        logger.info(f"Processing chunk {i+1}/{len(chunks)}")
-        synthesis_input = texttospeech.SynthesisInput(text=chunk)
-        try:
-            response = client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
-            logger.info(f"Chunk {i+1} synthesized successfully")
-        except Exception as e:
-            logger.exception(f"Error in synthesize_speech for chunk {i+1}: {str(e)}")
-            raise
-
-        temp_file = os.path.join(AUDIO_OUTPUT_DIR, f"temp_audio_{i}.mp3")
-        write_file(response.audio_content, temp_file)
-
-        audio_segment = AudioSegment.from_mp3(temp_file)
-        audio_segments.append(audio_segment)
-        os.remove(temp_file)
-        logger.info(f"Processed and removed temporary file for chunk {i+1}")
-
-    final_audio = sum(audio_segments)
-    final_audio.export(output_file, format="mp3")
-    logger.info(f"Audio book generated and saved as: {output_file}")
-
-    return output_file
-
-def split_content(content, max_chars=5000):
-    """
-    Splits content into chunks of maximum characters.
-    
-    :param content: The content to split
-    :param max_chars: Maximum characters per chunk (default: 5000)
-    :return: List of content chunks
-    """
-    logger.info(f"Splitting content into chunks of max {max_chars} characters")
-    chunks = [content[i:i+max_chars] for i in range(0, len(content), max_chars)]
-    logger.info(f"Content split into {len(chunks)} chunks")
-    return chunks
-
-def transcribe_audio_file(audio_file_path, language_code):
-    """
-    Transcribes an audio file to text using Google Cloud Speech-to-Text API.
-    
-    :param audio_file_path: The path to the audio file
-    :param language_code: The language code of the audio
-    :return: The transcribed text
-    """
-    logger.info(f"Starting audio file transcription. File: {audio_file_path}, Language: {language_code}")
-    client = speech.SpeechClient()
-    
-    _, file_extension = os.path.splitext(audio_file_path)
-    
-    content = read_file(audio_file_path)
-    logger.info("Audio file read successfully")
-
-    audio = speech.RecognitionAudio(content=content)
-    
-    if file_extension.lower() == '.mp3':
-        encoding = speech.RecognitionConfig.AudioEncoding.MP3
-    elif file_extension.lower() in ['.wav', '.wave']:
-        encoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
-    else:
-        logger.error(f"Unsupported audio format: {file_extension}")
-        raise ValueError(f"Unsupported audio format: {file_extension}")
-
-    config = speech.RecognitionConfig(
-        encoding=encoding,
-        sample_rate_hertz=AUDIO_SAMPLE_RATE,
-        language_code=language_code,
-    )
-
-    logger.info("Sending request to Google Cloud Speech-to-Text API")
-    response = client.recognize(config=config, audio=audio)
-
-    transcription = " ".join(result.alternatives[0].transcript for result in response.results)
-    logger.info("Audio file transcription completed")
-    return transcription.strip()
-
-def translate_audio_file(input_file, output_file, source_lang, target_lang, voice_gender):
-    """
-    Translates an audio file from the source language to the target language.
-    
-    :param input_file: Path to the input audio file
-    :param output_file: Path to save the output audio file
-    :param source_lang: Source language code
-    :param target_lang: Target language code
-    :param voice_gender: Gender of the voice for text-to-speech
-    :return: Path to the generated audio file
-    """
-    logger.info(f"Starting audio file translation. Input: {input_file}, Output: {output_file}")
-    logger.info(f"Source language: {source_lang}, Target language: {target_lang}, Voice gender: {voice_gender}")
-
-    try:
-        transcribed_text = transcribe_audio_file(input_file, source_lang)
-        logger.info("Audio transcription completed")
-
-        translated_text = process_text(transcribed_text, 'translate', source_lang=source_lang, target_lang=target_lang)
-        logger.info("Text translation completed")
-
-        audio_content = text_to_speech(translated_text, target_lang, voice_gender)
-        logger.info("Text-to-speech conversion completed")
+        os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
+        filename = generate_unique_filename(base_filename, ".mp3")
+        full_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
         
-        write_file(audio_content, output_file)
-        logger.info(f"Translated audio file saved as: {output_file}")
-        
-        return output_file
+        combined = AudioSegment.empty()
+        for audio_content in audio_contents:
+            segment = AudioSegment.from_mp3(io.BytesIO(audio_content))
+            combined += segment
+
+        combined.export(full_path, format="mp3")
+        logger.info(f'Large audio content written to file: "{full_path}"')
+        return full_path
     except Exception as e:
-        logger.exception(f"An error occurred during audio file translation: {str(e)}")
-        raise
+        logger.exception(f"An error occurred while saving the large audio: {str(e)}")
+        return None
+
