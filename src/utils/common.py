@@ -6,7 +6,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from io import BytesIO
 from datetime import datetime
-import wave
+import wave, io
 from pydub import AudioSegment
 from logging_config import get_module_logger
 from config.settings import (
@@ -332,29 +332,38 @@ def check_text_size(text):
         logger.exception(f"An error occurred while checking text size: {str(e)}")
         raise
 
-def check_audio_duration(audio_file):
+def check_audio_duration(audio_input):
     """
-    Checks the duration of the input audio file.
+    Checks the duration of the input audio.
     
-    :param audio_file: Path to the audio file
+    :param audio_input: Path to the audio file or audio content as bytes
     :return: True if the audio is considered large, False otherwise
     """
-    logger.info(f"Checking audio duration for file: {audio_file}")
+    logger.info(f"Checking audio duration")
     try:
-        _, file_extension = os.path.splitext(audio_file)
-        
-        if file_extension.lower() == '.wav':
-            with wave.open(audio_file, 'rb') as wav_file:
+        if isinstance(audio_input, str):
+            # It's a file path
+            file_path = audio_input
+            file_extension = os.path.splitext(file_path)[1].lower()
+        elif isinstance(audio_input, bytes):
+            # It's audio content
+            file_extension = '.mp3'  # Assume MP3 for byte content
+            file_path = io.BytesIO(audio_input)
+        else:
+            raise ValueError("Invalid input type. Expected str (file path) or bytes.")
+
+        if file_extension == '.wav':
+            with wave.open(file_path, 'rb') as wav_file:
                 frames = wav_file.getnframes()
                 rate = wav_file.getframerate()
                 duration = frames / float(rate)
-        elif file_extension.lower() in ['.mp3', '.ogg', '.flac']:
-            audio = AudioSegment.from_file(audio_file)
+        elif file_extension in ['.mp3', '.ogg', '.flac', '']:
+            audio = AudioSegment.from_file(file_path, format=file_extension[1:] if file_extension else 'mp3')
             duration = len(audio) / 1000.0  # pydub works in milliseconds
         else:
             raise ValueError(f"Unsupported audio format: {file_extension}")
         
-        # Consider audio large if it's longer than 1 minute
+        # Consider audio large if it's longer than 10 minutes (600 seconds)
         is_large = duration > 600
         logger.info(f"Audio duration: {duration:.2f} seconds. Considered large: {is_large}")
         return is_large

@@ -326,24 +326,59 @@ def handle_audio_to_audio_translation(languages, voices):
     voice_name, voice_gender = get_language_choice("Select the voice gender for the output audio:", voices)
     
     input_filename = input("Enter the input audio filename (including extension): ")
-    output_filename = input("Enter the output audio filename (including extension): ")
+    output_filename = input("Enter the output audio filename (without extension): ")
 
     input_file = os.path.join(AUDIO_TRANSLATION_INPUT_DIR, input_filename)
     output_file = os.path.join(AUDIO_TRANSLATION_OUTPUT_DIR, output_filename)
 
     try:
-        process_audio_file(input_file, output_file, 'translate', source_lang=source_code, target_lang=target_code, voice_gender=voice_gender)
-        logger.info(f"Audio translation completed: {output_file}")
-        print(f"Translated audio saved as: {output_file}")
-        
-        play_option = input("Would you like to play the translated audio? (y/n): ").lower()
-        if play_option == 'y':
-            logger.info("Playing translated audio")
-            play_audio(output_file)
+        # Step 1: Audio to Text (Transcription)
+        logger.info("Step 1: Transcribing audio to text")
+        transcribed_text = process_audio(input_file, 'transcribe', language_code=source_code)
+        if not transcribed_text:
+            raise ValueError("Audio transcription failed")
+        # print(f"Transcribed text: {transcribed_text}")
+
+        # Step 2: Text Translation
+        logger.info("Step 2: Translating text")
+        translated_text = process_text(transcribed_text, 'translate', source_lang=source_lang, target_lang=target_lang)
+        if not translated_text:
+            raise ValueError("Text translation failed")
+        # print(f"Translated text: {translated_text}")
+
+        # Step 3: Text to Speech
+        logger.info("Step 3: Converting translated text to speech")
+        audio_content = process_audio(translated_text, 'text_to_speech', text=translated_text, language_code=target_code, voice_gender=voice_gender)
+        if not audio_content:
+            raise ValueError("Text-to-speech conversion failed")
+
+        # Save the audio content
+        if audio_content:
+            if isinstance(audio_content, list):
+                generated_file = save_large_audio(audio_content, output_file, use_unique_name=False)
+            else:
+                generated_file = save_audio(audio_content, output_file, use_unique_name=False)
+            
+            if generated_file:
+                logger.info(f"Translated audio generated successfully: {generated_file}")
+                print(f"Translated audio generated successfully!")
+                print(f"Saved as: {generated_file}")
+                
+                play_option = input("Would you like to play the translated audio? (y/n): ").lower()
+                if play_option == 'y':
+                    logger.info("Playing translated audio")
+                    play_audio(generated_file)
+            else:
+                logger.error("Failed to save translated audio")
+                print("Failed to save translated audio.")
+        else:
+            logger.error("Failed to generate audio content")
+            print("Failed to generate translated audio.")
     except Exception as e:
         logger.exception(f"An error occurred during audio translation: {str(e)}")
         print(f"An error occurred during audio translation: {str(e)}")
 
+    
 def handle_sentiment_analysis():
     """
     Handle sentiment analysis of text.

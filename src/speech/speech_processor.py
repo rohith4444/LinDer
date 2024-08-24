@@ -36,18 +36,14 @@ def process_audio(audio_content, operation, **kwargs):
     """
     logger.info(f"Processing audio with operation: {operation}")
     try:
-        # Check if audio_content is a file path or bytes
-        if isinstance(audio_content, str):
-            is_large = check_audio_duration(audio_content)
-        else:
-            is_large = len(audio_content) > 10 * 1024 * 1024  # Consider audio large if it's more than 10MB
-
         if operation == 'transcribe':
+            is_large = check_audio_duration(audio_content)
             if is_large:
                 return transcribe_large_audio(audio_content, kwargs['language_code'])
             else:
                 return transcribe_audio(audio_content, kwargs['language_code'])
         elif operation == 'translate':
+            is_large = check_audio_duration(audio_content)
             if is_large:
                 transcribed_text = transcribe_large_audio(audio_content, kwargs['source_lang'])
             else:
@@ -55,7 +51,8 @@ def process_audio(audio_content, operation, **kwargs):
             return process_text(transcribed_text, 'translate', source_lang=kwargs['source_lang'], target_lang=kwargs['target_lang'])
         elif operation == 'text_to_speech':
             text = kwargs['text']
-            if check_text_size(text):
+            is_large = check_text_size(text)
+            if is_large:
                 return text_to_speech_large(text, kwargs['language_code'], kwargs['voice_gender'])
             else:
                 return text_to_speech(text, kwargs['language_code'], kwargs['voice_gender'])
