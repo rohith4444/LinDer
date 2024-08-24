@@ -2,13 +2,18 @@ import unittest
 from unittest.mock import patch, MagicMock
 from src.speech.speech_processor import process_audio, process_audio_file, transcribe_audio, transcribe_large_audio, text_to_speech, text_to_speech_large
 
+# This section imports necessary modules and functions for testing.
+
 class TestSpeechProcessor(unittest.TestCase):
+    # This class defines a test case for the speech processor functions.
 
     @patch('speech.speech_processor.transcribe_large_audio')
     @patch('speech.speech_processor.transcribe_audio')
     @patch('speech.speech_processor.text_to_speech_large')
     @patch('speech.speech_processor.text_to_speech')
     def test_process_audio(self, mock_tts, mock_tts_large, mock_transcribe, mock_transcribe_large):
+        # Tests the process_audio function for various scenarios
+
         # Test transcription of small audio
         mock_transcribe.return_value = "Transcribed text"
         result = process_audio(b'small_audio_content', 'transcribe', language_code='en-US')
@@ -39,6 +44,7 @@ class TestSpeechProcessor(unittest.TestCase):
     @patch('speech.speech_processor.write_file')
     @patch('speech.speech_processor.save_audio')
     def test_process_audio_file(self, mock_save_audio, mock_write_file, mock_process_audio):
+        # Tests the process_audio_file function
         mock_process_audio.return_value = "Processed content"
         
         # Test transcribe operation
@@ -54,6 +60,7 @@ class TestSpeechProcessor(unittest.TestCase):
 
     @patch('speech.speech_processor.speech_client.recognize')
     def test_transcribe_audio(self, mock_recognize):
+        # Tests the transcribe_audio function
         mock_response = MagicMock()
         mock_response.results = [MagicMock(alternatives=[MagicMock(transcript="Transcribed text")])]
         mock_recognize.return_value = mock_response
@@ -64,6 +71,7 @@ class TestSpeechProcessor(unittest.TestCase):
 
     @patch('speech.speech_processor.speech_client.long_running_recognize')
     def test_transcribe_large_audio(self, mock_long_recognize):
+        # Tests the transcribe_large_audio function
         mock_operation = MagicMock()
         mock_operation.result.return_value.results = [
             MagicMock(alternatives=[MagicMock(transcript="Transcribed large text part 1")]),
@@ -77,6 +85,7 @@ class TestSpeechProcessor(unittest.TestCase):
 
     @patch('speech.speech_processor.tts_client.synthesize_speech')
     def test_text_to_speech(self, mock_synthesize):
+        # Tests the text_to_speech function
         mock_synthesize.return_value = MagicMock(audio_content=b'synthesized_audio')
 
         result = text_to_speech("Test text", 'en-US', 'FEMALE')
@@ -86,6 +95,7 @@ class TestSpeechProcessor(unittest.TestCase):
     @patch('speech.speech_processor.text_to_speech')
     @patch('speech.speech_processor.split_content')
     def test_text_to_speech_large(self, mock_split, mock_tts):
+        # Tests the text_to_speech_large function
         mock_split.return_value = ["Chunk1", "Chunk2"]
         mock_tts.side_effect = [b'audio1', b'audio2']
 
@@ -96,3 +106,4 @@ class TestSpeechProcessor(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+    # Allows the test file to be run as a script
