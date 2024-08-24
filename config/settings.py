@@ -16,7 +16,6 @@ LANGUAGES = {
     "4": ("German", "de-DE"),
     "5": ("Italian", "it-IT")
 }
-
 # Voice options
 VOICES = {
     "1": ("Male", texttospeech.SsmlVoiceGender.MALE),
@@ -39,7 +38,7 @@ AUDIO_SAMPLE_RATE = config.getint('Audio', 'AUDIO_SAMPLE_RATE', fallback=16000)
 # File paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
-AUDIO_OUTPUT_DIR = os.path.join(DATA_DIR, config.get('Paths', 'AUDIO_OUTPUT_DIR', fallback='audio_output'))
+AUDIO_OUTPUT_DIR = os.path.join(DATA_DIR, config.get('Paths', 'AUDIO_OUTPUT_DIR', fallback='io files'))
 DOCUMENT_INPUT_DIR = os.path.join(DATA_DIR, config.get('Paths', 'DOCUMENT_INPUT_DIR', fallback='document_translation/input'))
 DOCUMENT_OUTPUT_DIR = os.path.join(DATA_DIR, config.get('Paths', 'DOCUMENT_OUTPUT_DIR', fallback='document_translation/output'))
 AUDIO_BOOK_INPUT_DIR = os.path.join(DATA_DIR, config.get('Paths', 'AUDIO_BOOK_INPUT_DIR', fallback='audio_book/input'))

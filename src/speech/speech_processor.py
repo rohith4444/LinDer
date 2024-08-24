@@ -8,7 +8,7 @@ from google.cloud import speech, texttospeech
 from pydub import AudioSegment
 
 from text.text_processor import process_text, translate_large_text
-from utils.common import read_file, write_file, generate_unique_filename, split_content, check_audio_duration
+from utils.common import read_file, write_file, generate_unique_filename, split_content, check_audio_duration, check_text_size
 from logging_config import get_module_logger
 from config.settings import (
     AUDIO_SAMPLE_RATE, DEFAULT_AUDIO_DURATION, AUDIO_OUTPUT_DIR,
@@ -29,15 +29,18 @@ def process_audio(audio_content, operation, **kwargs):
     """
     Processes audio content based on the specified operation.
     
-    :param audio_content: The audio content to process (bytes)
+    :param audio_content: The audio content to process (bytes or file path)
     :param operation: The operation to perform ('transcribe', 'translate', or 'text_to_speech')
     :param kwargs: Additional keyword arguments for specific operations
     :return: Processed audio content or text, depending on the operation
     """
     logger.info(f"Processing audio with operation: {operation}")
     try:
-        # Check audio size/duration
-        is_large = len(audio_content) > 10 * 1024 * 1024  # Consider audio large if it's more than 10MB
+        # Check if audio_content is a file path or bytes
+        if isinstance(audio_content, str):
+            is_large = check_audio_duration(audio_content)
+        else:
+            is_large = len(audio_content) > 10 * 1024 * 1024  # Consider audio large if it's more than 10MB
 
         if operation == 'transcribe':
             if is_large:
@@ -51,10 +54,11 @@ def process_audio(audio_content, operation, **kwargs):
                 transcribed_text = transcribe_audio(audio_content, kwargs['source_lang'])
             return process_text(transcribed_text, 'translate', source_lang=kwargs['source_lang'], target_lang=kwargs['target_lang'])
         elif operation == 'text_to_speech':
-            if len(kwargs['text'].encode('utf-8')) > 5000:
-                return text_to_speech_large(kwargs['text'], kwargs['language_code'], kwargs['voice_gender'])
+            text = kwargs['text']
+            if check_text_size(text):
+                return text_to_speech_large(text, kwargs['language_code'], kwargs['voice_gender'])
             else:
-                return text_to_speech(kwargs['text'], kwargs['language_code'], kwargs['voice_gender'])
+                return text_to_speech(text, kwargs['language_code'], kwargs['voice_gender'])
         else:
             logger.error(f"Unsupported operation: {operation}")
             return None
@@ -74,20 +78,27 @@ def process_audio_file(input_file, output_file, operation, **kwargs):
     """
     logger.info(f"Processing audio file. Input: {input_file}, Output: {output_file}, Operation: {operation}")
     try:
-        with open(input_file, 'rb') as audio_file:
-            audio_content = audio_file.read()
         
-        processed_content = process_audio(audio_content, operation, **kwargs)
-        
-        if processed_content:
-            if operation in ['transcribe', 'translate']:
+        if operation in ['transcribe', 'translate']:
+            processed_content = process_audio(input_file, operation, **kwargs)
+            if processed_content:
                 write_file(processed_content, output_file)
-            else:  # text_to_speech
-                save_audio(processed_content, os.path.splitext(output_file)[0])
-            logger.info(f"Processed content saved to: {output_file}")
-            return output_file
+                logger.info(f"Processed content saved to: {output_file}")
+                return output_file
+            else:
+                logger.error("Processing failed, no content to write")
+                return None
+        elif operation == 'text_to_speech':
+            audio_content = process_audio(kwargs['text'], operation, **kwargs)
+            if audio_content:
+                save_audio(audio_content, os.path.splitext(output_file)[0], use_unique_name=False)
+                logger.info(f"Processed content saved to: {output_file}")
+                return output_file
+            else:
+                logger.error("Processing failed, no content to write")
+                return None
         else:
-            logger.error("Processing failed, no content to write")
+            logger.error(f"Unsupported operation: {operation}")
             return None
     except Exception as e:
         logger.exception(f"An error occurred during audio file processing: {str(e)}")
@@ -156,23 +167,26 @@ def transcribe_audio(audio_file, language_code):
 
         audio = speech.RecognitionAudio(content=content)
         config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            encoding=speech.RecognitionConfig.AudioEncoding.MP3,
             sample_rate_hertz=AUDIO_SAMPLE_RATE,
             language_code=language_code,
         )
 
         response = speech_client.recognize(config=config, audio=audio)
 
+        transcribed_text = ""
         for result in response.results:
-            transcribed_text = result.alternatives[0].transcript
-            logger.info("Audio transcription completed successfully")
-            return transcribed_text
+            transcribed_text += result.alternatives[0].transcript + " "
 
-        logger.warning("No transcription results returned")
-        return ""
+        if transcribed_text:
+            logger.info("Audio transcription completed successfully")
+            return transcribed_text.strip()
+        else:
+            logger.warning("No transcription results returned")
+            return ""
 
     except Exception as e:
-        logger.exception(f"Error during audio transcription: {e}")
+        logger.exception(f"Error during audio transcription: {str(e)}")
         return ""
 
 def transcribe_large_audio(audio_file, language_code):
@@ -230,7 +244,7 @@ def text_to_speech(text, language_code, voice_gender):
         logger.exception(f"An error occurred during text-to-speech conversion: {str(e)}")
         return None
 
-def text_to_speech_large(text, language_code, voice_gender, chunk_size=5000):
+def text_to_speech_large(text, language_code, voice_gender, chunk_size=3500):
     """
     Converts large text to speech using Google Cloud Text-to-Speech API by splitting it into chunks.
     
@@ -246,13 +260,23 @@ def text_to_speech_large(text, language_code, voice_gender, chunk_size=5000):
 
     for i, chunk in enumerate(chunks):
         logger.info(f"Converting chunk {i+1}/{len(chunks)} to speech")
-        audio_content = text_to_speech(chunk, language_code, voice_gender)
-        if audio_content:
-            audio_contents.append(audio_content)
+        if check_text_size(chunk):
+            logger.warning(f"Chunk {i+1} is still too large, splitting further")
+            sub_chunks = split_content(chunk, chunk_size // 2)
+            for j, sub_chunk in enumerate(sub_chunks):
+                audio_content = text_to_speech(sub_chunk, language_code, voice_gender)
+                if audio_content:
+                    audio_contents.append(audio_content)
+                else:
+                    logger.error(f"Failed to convert sub-chunk {j+1} of chunk {i+1} to speech")
         else:
-            logger.error(f"Failed to convert chunk {i+1} to speech")
+            audio_content = text_to_speech(chunk, language_code, voice_gender)
+            if audio_content:
+                audio_contents.append(audio_content)
+            else:
+                logger.error(f"Failed to convert chunk {i+1} to speech")
 
-    if len(audio_contents) == len(chunks):
+    if len(audio_contents) == sum(len(split_content(chunk, chunk_size // 2)) if check_text_size(chunk) else 1 for chunk in chunks):
         logger.info("Large text-to-speech conversion completed successfully")
         return audio_contents
     else:
@@ -296,39 +320,48 @@ def play_audio(audio_input):
         pygame.mixer.quit()
         logger.info("Audio playback resources released")
 
-def save_audio(audio_content, base_filename="output"):
+def save_audio(audio_content, base_filename="output", use_unique_name=True):
     """
-    Saves the audio content to a file in the data folder with a unique filename.
+    Saves the audio content to a file in the data folder.
     
     :param audio_content: The audio content to save
     :param base_filename: The base name for the file (default: "output")
+    :param use_unique_name: Whether to generate a unique filename (default: True)
     :return: The full path of the saved file or None if an error occurred
     """
     logger.info(f"Saving audio content. Base filename: {base_filename}")
     try:
         os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
-        filename = generate_unique_filename(base_filename, ".mp3")
+        if use_unique_name:
+            filename = generate_unique_filename(base_filename, ".mp3")
+        else:
+            filename = f"{base_filename}.mp3"
         full_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
         
-        write_file(audio_content, full_path)
+        with open(full_path, 'wb') as file:
+            file.write(audio_content)
         logger.info(f'Audio content written to file: "{full_path}"')
         return full_path
     except Exception as e:
         logger.exception(f"An error occurred while saving the audio: {str(e)}")
         return None
 
-def save_large_audio(audio_contents, base_filename="output"):
+def save_large_audio(audio_contents, base_filename="output", use_unique_name=True):
     """
-    Saves large audio content (multiple chunks) to a file in the data folder with a unique filename.
+    Saves large audio content (multiple chunks) to a file in the data folder.
     
     :param audio_contents: List of audio contents to save
     :param base_filename: The base name for the file (default: "output")
+    :param use_unique_name: Whether to generate a unique filename (default: True)
     :return: The full path of the saved file or None if an error occurred
     """
     logger.info(f"Saving large audio content. Base filename: {base_filename}")
     try:
         os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
-        filename = generate_unique_filename(base_filename, ".mp3")
+        if use_unique_name:
+            filename = generate_unique_filename(base_filename, ".mp3")
+        else:
+            filename = f"{base_filename}.mp3"
         full_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
         
         combined = AudioSegment.empty()
@@ -342,4 +375,3 @@ def save_large_audio(audio_contents, base_filename="output"):
     except Exception as e:
         logger.exception(f"An error occurred while saving the large audio: {str(e)}")
         return None
-

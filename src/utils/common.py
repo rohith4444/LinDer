@@ -285,7 +285,11 @@ def write_file(content, output_file):
     logger.info(f"Writing content to file: {output_file}")
     _, file_extension = os.path.splitext(output_file)
     try:
-        if isinstance(content, str) and len(content.encode('utf-8')) > 10 * 1024 * 1024:
+        if file_extension.lower() == '.mp3':
+            with open(output_file, 'wb') as file:
+                file.write(content)
+            logger.info("Content written to MP3 file successfully")
+        elif isinstance(content, str) and len(content.encode('utf-8')) > 10 * 1024 * 1024:
             write_large_file(content.encode('utf-8'), output_file)
         elif isinstance(content, bytes) and len(content) > 10 * 1024 * 1024:
             write_large_file(content, output_file)
@@ -351,7 +355,7 @@ def check_audio_duration(audio_file):
             raise ValueError(f"Unsupported audio format: {file_extension}")
         
         # Consider audio large if it's longer than 1 minute
-        is_large = duration > 60
+        is_large = duration > 600
         logger.info(f"Audio duration: {duration:.2f} seconds. Considered large: {is_large}")
         return is_large
     except Exception as e:
